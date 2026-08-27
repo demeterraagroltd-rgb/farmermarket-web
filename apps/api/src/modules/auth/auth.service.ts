@@ -37,19 +37,20 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const [mfa] = await this.db
-      .select()
-      .from(mfaCredentials)
-      .where(eq(mfaCredentials.staffId, account.id))
-      .limit(1);
+    // MFA is intentionally not enforced right now (product decision, not an
+    // oversight) — but if a code was actually sent and the account has MFA
+    // enrolled, still check it, so entering a wrong code doesn't silently
+    // succeed. Omitting the field entirely is what skips MFA.
+    if (input.totpCode) {
+      const [mfa] = await this.db
+        .select()
+        .from(mfaCredentials)
+        .where(eq(mfaCredentials.staffId, account.id))
+        .limit(1);
 
-    if (!mfa?.confirmedAt) {
-      throw new UnauthorizedException("MFA is not enrolled for this account");
-    }
-
-    const totpOk = authenticator.check(input.totpCode, mfa.secret);
-    if (!totpOk) {
-      throw new UnauthorizedException("Invalid TOTP code");
+      if (mfa?.confirmedAt && !authenticator.check(input.totpCode, mfa.secret)) {
+        throw new UnauthorizedException("Invalid TOTP code");
+      }
     }
 
     const accessToken = this.jwt.sign(

@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { setToken } from "../../../lib/auth";
 
 // Staff login against POST /v1/auth/staff/login (apps/api/src/modules/auth).
-// Mandatory TOTP field per §6.1 — no password-only path exists.
+// MFA is intentionally not enforced right now (product decision) — email +
+// password is enough. The API still accepts an optional totpCode if this
+// gets turned back on later.
 export default function StaffLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +23,7 @@ export default function StaffLoginPage() {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/auth/staff/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, totpCode }),
+        body: JSON.stringify({ email, password }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -55,16 +56,6 @@ export default function StaffLoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="rounded-md border border-dark-border px-3 py-2"
-          required
-        />
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="6-digit authenticator code"
-          value={totpCode}
-          onChange={(e) => setTotpCode(e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-          maxLength={6}
           required
         />
         {error && <p className="text-sm text-error">{error}</p>}
