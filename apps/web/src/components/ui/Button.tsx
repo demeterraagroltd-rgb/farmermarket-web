@@ -4,8 +4,11 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary: "bg-primary text-white hover:bg-primary-dark disabled:bg-primary/50",
+  // The brand's secondary color is gold/orange (--color-gold), not another
+  // shade of green — was unused everywhere before this, so redefining it
+  // here doesn't touch any existing call site.
   secondary:
-    "bg-primary-surface text-primary-dark hover:bg-primary-surface/70 disabled:opacity-50",
+    "border-2 border-gold text-gold-dark hover:bg-gold/10 disabled:opacity-50",
   ghost: "text-text-medium hover:bg-surface disabled:opacity-50",
   danger: "bg-error text-white hover:brightness-95 disabled:bg-error/50",
 };
