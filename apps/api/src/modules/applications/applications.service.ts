@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { nairaToKobo } from "@farmermarket/core";
 import {
   applications,
@@ -7,6 +7,7 @@ import {
   applicationEvents,
   creditProfiles,
   creditLimitChanges,
+  staff,
   users,
   type Db,
 } from "@farmermarket/db";
@@ -82,6 +83,26 @@ export class ApplicationsService {
     const [row] = await this.db.select().from(applications).where(eq(applications.id, id)).limit(1);
     if (!row) throw new NotFoundException("Application not found");
     return row;
+  }
+
+  // Powers the review workspace's Activity timeline. Every status
+  // transition writes an `application_events` row (see decide() below);
+  // this just reads them back oldest-first, with the actor's name resolved
+  // so the timeline doesn't just show a bare staff id.
+  async getEvents(id: string) {
+    return this.db
+      .select({
+        id: applicationEvents.id,
+        fromStatus: applicationEvents.fromStatus,
+        toStatus: applicationEvents.toStatus,
+        reason: applicationEvents.reason,
+        createdAt: applicationEvents.createdAt,
+        actorName: staff.fullName,
+      })
+      .from(applicationEvents)
+      .leftJoin(staff, eq(staff.id, applicationEvents.actorStaffId))
+      .where(eq(applicationEvents.applicationId, id))
+      .orderBy(asc(applicationEvents.createdAt));
   }
 
   // Manual verification checklist (no Mono/FirstCentral automating this

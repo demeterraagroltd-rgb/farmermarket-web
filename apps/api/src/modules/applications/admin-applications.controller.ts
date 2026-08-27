@@ -31,6 +31,11 @@ export class AdminApplicationsController {
     return this.applicationsService.findOne(id);
   }
 
+  @Get(":id/events")
+  getEvents(@Param("id") id: string) {
+    return this.applicationsService.getEvents(id);
+  }
+
   @Patch(":id/verification")
   setVerification(
     @Param("id") id: string,
