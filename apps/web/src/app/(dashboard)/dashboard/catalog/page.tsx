@@ -54,16 +54,34 @@ export default function CatalogPage() {
   });
   const [busy, setBusy] = useState(false);
 
+  // Each response is checked before being trusted as the array it's
+  // supposed to be — an error body (e.g. a 403 from a non-admin role, which
+  // is a real, intended outcome, not a bug) is an object, and calling
+  // .map() on it crashed the whole page instead of showing a message.
+  async function loadOne<T>(path: string, onUnauthorized: () => void): Promise<T> {
+    const res = await apiFetch(path);
+    if (res.status === 401) {
+      onUnauthorized();
+      throw new Error("Session expired");
+    }
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body.message ?? `Request to ${path} failed (${res.status})`);
+    }
+    return body as T;
+  }
+
   function loadAll() {
     Promise.all([
-      apiFetch("/v1/admin/catalog/categories").then((r) => r.json()),
-      apiFetch("/v1/admin/catalog/brands").then((r) => r.json()),
-      apiFetch("/v1/admin/catalog/products").then((r) => r.json()),
+      loadOne<Category[]>("/v1/admin/catalog/categories", () => router.push("/login")),
+      loadOne<Brand[]>("/v1/admin/catalog/brands", () => router.push("/login")),
+      loadOne<Product[]>("/v1/admin/catalog/products", () => router.push("/login")),
     ])
       .then(([c, b, p]) => {
         setCategories(c);
         setBrands(b);
         setProducts(p);
+        setError(null);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load catalog"));
   }
