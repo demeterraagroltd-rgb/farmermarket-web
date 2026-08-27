@@ -12,3 +12,9 @@ export function createDb(connectionString: string) {
 }
 
 export type Db = ReturnType<typeof createDb>;
+
+// The type of the callback argument to `db.transaction(async (tx) => ...)`.
+// Not identical to `Db` (drizzle's transaction object is structurally
+// similar but a distinct generic type) — derived via `Parameters<>` rather
+// than hand-reconstructed, so it can't drift out of sync with drizzle-orm.
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];

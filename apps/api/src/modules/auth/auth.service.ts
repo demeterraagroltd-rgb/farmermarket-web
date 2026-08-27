@@ -1,13 +1,19 @@
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { eq } from "drizzle-orm";
 import * as argon2 from "argon2";
 import { authenticator } from "otplib";
-import { staff, mfaCredentials, sessions, type Db } from "@farmermarket/db";
+import { staff, mfaCredentials, sessions, users, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import type { LoginInput } from "./dto/login.dto";
+import type { CustomerLoginInput } from "./dto/customer-login.dto";
 
 const ACCESS_TOKEN_TTL = "15m"; // §6.1
+// No refresh-token/session mechanism on the customer side yet — the
+// Flutter AuthTokenStore only holds a single token today (§14, no OTP
+// session design exists). A long-lived token is the honest stand-in;
+// replace with real rotating sessions once Termii OTP lands.
+const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
 
 @Injectable()
 export class AuthService {
@@ -70,5 +76,28 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken, role: account.role };
+  }
+
+  /**
+   * Phone-only login for an *existing* customer — see customer-login.dto.ts
+   * for why this doesn't create an account. `kind: 'customer'` in the JWT
+   * claim is a defense-in-depth marker: CustomerJwtAuthGuard checks it
+   * explicitly rather than relying only on "this id isn't in `staff`" to
+   * keep a customer token out of staff-only routes.
+   */
+  async loginCustomer(input: CustomerLoginInput) {
+    const [user] = await this.db.select().from(users).where(eq(users.phone, input.phone)).limit(1);
+    if (!user) {
+      throw new NotFoundException(
+        "No account found for this phone number — submit an application first",
+      );
+    }
+
+    const accessToken = this.jwt.sign(
+      { sub: user.id, kind: "customer" },
+      { expiresIn: CUSTOMER_ACCESS_TOKEN_TTL },
+    );
+
+    return { accessToken, userId: user.id, fullName: user.fullName };
   }
 }

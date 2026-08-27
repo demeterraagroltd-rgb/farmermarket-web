@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
-import { AuthController } from "./auth.controller";
+import { AuthController, CustomerAuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 
 @Module({
@@ -9,7 +9,7 @@ import { AuthService } from "./auth.service";
       secret: process.env.JWT_SECRET ?? "dev-only-secret-do-not-use-in-prod",
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, CustomerAuthController],
   providers: [AuthService],
   exports: [JwtModule],
 })
