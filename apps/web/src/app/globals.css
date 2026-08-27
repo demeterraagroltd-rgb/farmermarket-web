@@ -48,6 +48,20 @@
   --shadow-card: 0 8px 20px -4px rgb(26 122 76 / 0.12);
 }
 
+/*
+ * Gradients from packages/ui/src/tokens.ts, ported the same way the
+ * @theme colors above are — that file defines them, this file mirrors
+ * them because CSS can't import a TS module. Plain custom properties
+ * (not @theme) since Tailwind v4's utility generation is color/spacing
+ * specific and doesn't cover `background-image`.
+ */
+:root {
+  --gradient-primary: linear-gradient(135deg, #1a7a4c, #0d4f31);
+  --gradient-gold: linear-gradient(135deg, #ffd166, #f5a623);
+  --gradient-credit-card: linear-gradient(135deg, #1a7a4c 0%, #0a3d23 50%, #0d4f31 100%);
+  --gradient-dark-card: linear-gradient(135deg, #162b20, #0f1f18);
+}
+
 body {
   background: var(--color-off-white);
   color: var(--color-text-dark);

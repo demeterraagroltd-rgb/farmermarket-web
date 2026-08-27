@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
 import { formatNaira, formatDate } from "../../../../lib/format";
 import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
+import { StatCard } from "../../../../components/ui/StatCard";
 
 interface Customer {
   id: string;
@@ -17,6 +18,28 @@ interface Customer {
   usedCreditKobo: string | null;
   tier: string | null;
   isVerified: boolean | null;
+}
+
+function initials(name: string | null, phone: string): string {
+  if (!name) return phone.slice(-2);
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+// Real, not decorative — utilization is used/limit from the same
+// credit_profiles row the phone app reads (§5.3). A bar reads faster than
+// two separate naira figures when you're scanning a list of customers.
+function UtilizationBar({ used, limit }: { used: number; limit: number }) {
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const color = pct >= 90 ? "bg-error" : pct >= 70 ? "bg-warning" : "bg-primary";
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-8 text-right text-xs tabular-nums text-text-muted">{pct}%</span>
+    </div>
+  );
 }
 
 // Stand-in for the real 360° customer view (§11.4) — order history,
@@ -47,6 +70,13 @@ export default function CustomersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const stats = useMemo(() => {
+    if (!customers) return null;
+    const withLimit = customers.filter((c) => Number(c.creditLimitKobo ?? 0) > 0);
+    const totalOutstandingKobo = customers.reduce((sum, c) => sum + Number(c.usedCreditKobo ?? 0), 0);
+    return { total: customers.length, withLimit: withLimit.length, totalOutstandingKobo };
+  }, [customers]);
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -55,6 +85,15 @@ export default function CustomersPage() {
       />
 
       {error && <p className="text-sm text-error">{error}</p>}
+
+      {stats && (
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Total customers" value={stats.total} />
+          <StatCard label="With an active limit" value={stats.withLimit} tone="success" />
+          <StatCard label="Total outstanding" value={formatNaira(stats.totalOutstandingKobo)} />
+        </div>
+      )}
+
       {customers?.length === 0 && <EmptyState label="No customers yet." />}
 
       {customers && customers.length > 0 && (
@@ -62,21 +101,35 @@ export default function CustomersPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-dark-border/60 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                <th className="px-5 py-3">Name</th>
-                <th className="px-5 py-3">Phone</th>
+                <th className="px-5 py-3">Customer</th>
                 <th className="px-5 py-3">Credit limit</th>
-                <th className="px-5 py-3">Used</th>
+                <th className="px-5 py-3">Utilization</th>
                 <th className="px-5 py-3">Tier</th>
                 <th className="px-5 py-3">Joined</th>
               </tr>
             </thead>
             <tbody>
               {customers.map((c) => (
-                <tr key={c.id} className="border-b border-dark-border/40 last:border-0">
-                  <td className="px-5 py-3 text-text-dark">{c.fullName ?? "—"}</td>
-                  <td className="px-5 py-3 text-text-medium">{c.phone}</td>
+                <tr key={c.id} className="border-b border-dark-border/40 last:border-0 hover:bg-surface">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-surface text-xs font-bold text-primary-dark">
+                        {initials(c.fullName, c.phone)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-text-dark">{c.fullName ?? "—"}</p>
+                        <p className="truncate text-xs text-text-muted">{c.phone}</p>
+                      </div>
+                    </div>
+                  </td>
                   <td className="px-5 py-3 tabular-nums text-text-dark">{formatNaira(c.creditLimitKobo)}</td>
-                  <td className="px-5 py-3 tabular-nums text-text-medium">{formatNaira(c.usedCreditKobo)}</td>
+                  <td className="px-5 py-3">
+                    {c.creditLimitKobo ? (
+                      <UtilizationBar used={Number(c.usedCreditKobo ?? 0)} limit={Number(c.creditLimitKobo)} />
+                    ) : (
+                      <span className="text-xs text-text-muted">No limit yet</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3">
                     {c.tier ? <Badge tone="gold">{c.tier}</Badge> : <span className="text-text-muted">—</span>}
                   </td>

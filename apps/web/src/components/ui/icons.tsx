@@ -79,3 +79,52 @@ export function CheckIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function DocumentIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M6 2.5h6l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Z" />
+      <path d="M12 2.5V6h3" />
+      <path d="M7.5 10h5M7.5 12.5h5" />
+    </svg>
+  );
+}
+
+export function BankIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M2.5 7.5 10 3l7.5 4.5" />
+      <path d="M3.5 7.5h13V16h-13V7.5Z" />
+      <path d="M6 10.5V14M10 10.5V14M14 10.5V14" />
+      <path d="M2.5 16h15" />
+    </svg>
+  );
+}
+
+export function GridIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="2.5" y="2.5" width="6" height="6" rx="1.2" />
+      <rect x="11.5" y="2.5" width="6" height="6" rx="1.2" />
+      <rect x="2.5" y="11.5" width="6" height="6" rx="1.2" />
+      <rect x="11.5" y="11.5" width="6" height="6" rx="1.2" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M5 7.5 10 12.5 15 7.5" />
+    </svg>
+  );
+}
+
+export function SparkleIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M10 3v3M10 14v3M3 10h3M14 10h3" />
+      <path d="m5.5 5.5 2 2M14.5 5.5l-2 2M5.5 14.5l2-2M14.5 14.5l-2-2" />
+    </svg>
+  );
+}

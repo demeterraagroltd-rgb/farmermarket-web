@@ -8,6 +8,7 @@ import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
 import { Input, Select } from "../../../../components/ui/Field";
+import { PlusIcon } from "../../../../components/ui/icons";
 
 interface StaffMember {
   id: string;
@@ -30,6 +31,18 @@ const ROLE_TONE: Record<string, "gold" | "info" | "success" | "neutral"> = {
   credit: "success",
   sales: "neutral",
 };
+
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "Super admin",
+  admin: "Admin",
+  credit: "Credit",
+  sales: "Sales",
+};
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
 
 // "Staff CRUD & role assignment" (§11.4) — super_admin only (§6.2). The
 // created account's MFA secret is shown exactly once, here, right after
@@ -128,15 +141,18 @@ export default function StaffPage() {
             value={form.role}
             onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
           >
-            <option value="sales">sales</option>
-            <option value="credit">credit</option>
-            <option value="admin">admin</option>
-            <option value="super_admin">super_admin</option>
+            <option value="sales">Sales</option>
+            <option value="credit">Credit</option>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super admin</option>
           </Select>
-          <Button type="submit" disabled={creating} className="col-span-2 self-start">
-            {creating ? "Creating…" : "Create staff account"}
-          </Button>
           {createError && <p className="col-span-2 text-sm text-error">{createError}</p>}
+          <div className="col-span-2 flex justify-end border-t border-dark-border/60 pt-4">
+            <Button type="submit" disabled={creating}>
+              <PlusIcon className="h-4 w-4" />
+              {creating ? "Creating…" : "Create staff account"}
+            </Button>
+          </div>
         </form>
       </Card>
 
@@ -149,8 +165,7 @@ export default function StaffPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-dark-border/60 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                <th className="px-5 py-3">Name</th>
-                <th className="px-5 py-3">Email</th>
+                <th className="px-5 py-3">Staff</th>
                 <th className="px-5 py-3">Role</th>
                 <th className="px-5 py-3">Active</th>
                 <th className="px-5 py-3">Created</th>
@@ -158,11 +173,20 @@ export default function StaffPage() {
             </thead>
             <tbody>
               {staffList.map((s) => (
-                <tr key={s.id} className="border-b border-dark-border/40 last:border-0">
-                  <td className="px-5 py-3 text-text-dark">{s.fullName}</td>
-                  <td className="px-5 py-3 text-text-medium">{s.email}</td>
+                <tr key={s.id} className="border-b border-dark-border/40 last:border-0 hover:bg-surface">
                   <td className="px-5 py-3">
-                    <Badge tone={ROLE_TONE[s.role] ?? "neutral"}>{s.role}</Badge>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-surface text-xs font-bold text-primary-dark">
+                        {initials(s.fullName)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-text-dark">{s.fullName}</p>
+                        <p className="truncate text-xs text-text-muted">{s.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <Badge tone={ROLE_TONE[s.role] ?? "neutral"}>{ROLE_LABEL[s.role] ?? s.role}</Badge>
                   </td>
                   <td className="px-5 py-3">
                     <Badge tone={s.isActive ? "success" : "error"}>{s.isActive ? "Active" : "Inactive"}</Badge>

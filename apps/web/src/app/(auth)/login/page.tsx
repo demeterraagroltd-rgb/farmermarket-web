@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { setToken } from "../../../lib/auth";
+import { setSession } from "../../../lib/auth";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Field";
@@ -33,7 +33,7 @@ export default function StaffLoginPage() {
       if (!res.ok) {
         throw new Error(body.message ?? "Login failed");
       }
-      setToken(body.accessToken);
+      setSession(body.accessToken, body.role, email);
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -43,33 +43,41 @@ export default function StaffLoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <div className="mb-6 flex flex-col items-center gap-4">
-        <Image src="/icon.png" alt="Farmer Market" width={48} height={48} className="rounded-[var(--radius-md)]" />
-        <h1 className="text-xl font-bold text-text-dark">Staff sign in</h1>
+    <main
+      className="flex min-h-screen items-center justify-center px-6"
+      style={{ background: "var(--gradient-dark-card)" }}
+    >
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-4">
+          <Image src="/icon.png" alt="Farmer Market" width={52} height={52} className="rounded-[var(--radius-md)] shadow-[var(--shadow-card)]" />
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-white">Staff sign in</h1>
+            <p className="mt-1 text-sm text-white/60">Farmer Market operations</p>
+          </div>
+        </div>
+        <Card className="p-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <Input
+              type="email"
+              label="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <Input
+              type="password"
+              label="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {error && <p className="text-sm text-error">{error}</p>}
+            <Button type="submit" disabled={loading}>
+              {loading ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+        </Card>
       </div>
-      <Card className="p-6">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <Input
-            type="email"
-            label="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <Input
-            type="password"
-            label="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {error && <p className="text-sm text-error">{error}</p>}
-          <Button type="submit" disabled={loading}>
-            {loading ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
-      </Card>
     </main>
   );
 }

@@ -8,6 +8,7 @@ import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
 import { Input, Select } from "../../../../components/ui/Field";
+import { PlusIcon, BoxIcon } from "../../../../components/ui/icons";
 
 interface Category {
   id: string;
@@ -30,10 +31,38 @@ interface Product {
 
 const STATUS_TONE = { draft: "neutral", published: "success", archived: "error" } as const;
 
+// A quick, unlabeled create row — a category or brand is a single word,
+// so a full form with its own submit button reads heavier than the data
+// it captures. The icon button is deliberately small; this is a utility
+// action, not the page's primary one.
+function QuickAddRow({
+  placeholder,
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  disabled: boolean;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="mt-3 flex gap-2">
+      <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} required />
+      <Button type="submit" disabled={disabled} variant="secondary" className="px-3">
+        <PlusIcon className="h-4 w-4" />
+      </Button>
+    </form>
+  );
+}
+
 // Stand-in for the real merchandising UI (§10, §11.4) — drag-reorder,
-// phone-frame preview, bulk publish. This is the minimum that closes the
-// loop: an admin can add a product and publish it, and it shows up on
-// the public /marketplace page.
+// phone-frame preview, bulk publish, grid/table toggle. This is the grid
+// half of that (closer to how the storefront actually reads than a plain
+// table was) plus the minimum that closes the loop: an admin can add a
+// product and publish it, and it shows up on the public /marketplace page.
 export default function CatalogPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
@@ -158,25 +187,18 @@ export default function CatalogPage() {
     loadAll();
   }
 
+  const categoryName_ = (id: string) => categories.find((c) => c.id === id)?.name ?? "—";
+  const brandName_ = (id: string) => brands.find((b) => b.id === id)?.name ?? "—";
+
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <PageHeader title="Catalog" description="What's for sale, and what's actually live on the storefront." />
       {error && <p className="text-sm text-error">{error}</p>}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-text-dark">Categories</h2>
-          <form onSubmit={createCategory} className="mt-3 flex gap-2">
-            <Input
-              placeholder="e.g. Rice"
-              value={categoryName}
-              onChange={(e) => setCategoryName(e.target.value)}
-              required
-            />
-            <Button type="submit" disabled={busy}>
-              Add
-            </Button>
-          </form>
+          <QuickAddRow placeholder="e.g. Rice" value={categoryName} onChange={setCategoryName} onSubmit={createCategory} disabled={busy} />
           {categories.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {categories.map((c) => (
@@ -187,19 +209,10 @@ export default function CatalogPage() {
             </div>
           )}
         </Card>
+
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-text-dark">Brands</h2>
-          <form onSubmit={createBrand} className="mt-3 flex gap-2">
-            <Input
-              placeholder="e.g. Big Bull"
-              value={brandName}
-              onChange={(e) => setBrandName(e.target.value)}
-              required
-            />
-            <Button type="submit" disabled={busy}>
-              Add
-            </Button>
-          </form>
+          <QuickAddRow placeholder="e.g. Big Bull" value={brandName} onChange={setBrandName} onSubmit={createBrand} disabled={busy} />
           {brands.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {brands.map((b) => (
@@ -210,37 +223,61 @@ export default function CatalogPage() {
             </div>
           )}
         </Card>
+
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-text-dark">At a glance</h2>
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Products</span>
+              <span className="font-semibold tabular-nums text-text-dark">{products.length}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Published</span>
+              <span className="font-semibold tabular-nums text-success">
+                {products.filter((p) => p.status === "published").length}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Draft</span>
+              <span className="font-semibold tabular-nums text-text-medium">
+                {products.filter((p) => p.status === "draft").length}
+              </span>
+            </div>
+          </div>
+        </Card>
       </div>
 
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-text-dark">Add a product</h2>
-        <form onSubmit={createProduct} className="mt-3 grid grid-cols-3 gap-3">
+        <form onSubmit={createProduct} className="mt-4 grid grid-cols-3 gap-4">
           <Input
-            placeholder="Product name"
+            label="Product name"
             value={productForm.name}
             onChange={(e) => setProductForm((f) => ({ ...f, name: e.target.value }))}
             required
           />
           <Input
-            placeholder="Image URL (or /products/... )"
+            label="Image URL"
+            placeholder="/products/... or https://..."
             value={productForm.imageUrl}
             onChange={(e) => setProductForm((f) => ({ ...f, imageUrl: e.target.value }))}
             required
           />
           <Input
             type="number"
-            placeholder="Price, ₦"
+            label="Price, ₦"
             value={productForm.priceNaira}
             onChange={(e) => setProductForm((f) => ({ ...f, priceNaira: e.target.value }))}
             min={1}
             required
           />
           <Select
+            label="Category"
             value={productForm.categoryId}
             onChange={(e) => setProductForm((f) => ({ ...f, categoryId: e.target.value }))}
             required
           >
-            <option value="">Category</option>
+            <option value="">Select…</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -248,11 +285,12 @@ export default function CatalogPage() {
             ))}
           </Select>
           <Select
+            label="Brand"
             value={productForm.brandId}
             onChange={(e) => setProductForm((f) => ({ ...f, brandId: e.target.value }))}
             required
           >
-            <option value="">Brand</option>
+            <option value="">Select…</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
@@ -260,67 +298,66 @@ export default function CatalogPage() {
             ))}
           </Select>
           <Input
-            placeholder="Unit (e.g. 50kg bag)"
+            label="Unit"
+            placeholder="e.g. 50kg bag"
             value={productForm.unit}
             onChange={(e) => setProductForm((f) => ({ ...f, unit: e.target.value }))}
             required
           />
           <Input
             type="number"
-            placeholder="Stock"
+            label="Stock"
             value={productForm.stockQuantity}
             onChange={(e) => setProductForm((f) => ({ ...f, stockQuantity: e.target.value }))}
             min={0}
           />
-          <Button type="submit" disabled={busy} className="col-span-3 self-start">
-            Add product (draft)
-          </Button>
+          <div className="col-span-3 flex justify-end border-t border-dark-border/60 pt-4">
+            <Button type="submit" disabled={busy}>
+              <PlusIcon className="h-4 w-4" />
+              Add product
+            </Button>
+          </div>
         </form>
       </Card>
 
       {products.length === 0 ? (
         <EmptyState label="No products yet." />
       ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-dark-border/60 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                <th className="px-5 py-3">Product</th>
-                <th className="px-5 py-3">Price</th>
-                <th className="px-5 py-3">Stock</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id} className="border-b border-dark-border/40 last:border-0">
-                  <td className="flex items-center gap-3 px-5 py-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.imageUrl}
-                      alt=""
-                      className="h-10 w-10 rounded-[var(--radius-sm)] object-cover"
-                    />
-                    <span className="font-medium text-text-dark">{p.name}</span>
-                  </td>
-                  <td className="px-5 py-3 tabular-nums text-text-dark">{formatNaira(p.priceKobo)}</td>
-                  <td className="px-5 py-3 tabular-nums text-text-medium">{p.stockQuantity}</td>
-                  <td className="px-5 py-3">
-                    <Badge tone={STATUS_TONE[p.status as keyof typeof STATUS_TONE] ?? "neutral"}>
-                      {p.status}
-                    </Badge>
-                  </td>
-                  <td className="px-5 py-3">
-                    <button onClick={() => togglePublish(p)} className="text-sm font-medium text-primary hover:underline">
-                      {p.status === "published" ? "Unpublish" : "Publish"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <div className="grid grid-cols-4 gap-4">
+          {products.map((p) => (
+            <Card key={p.id} className="flex flex-col overflow-hidden">
+              <div className="relative h-32 w-full bg-surface">
+                {p.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.imageUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <BoxIcon className="h-8 w-8 text-text-muted" />
+                  </div>
+                )}
+                <div className="absolute right-2 top-2">
+                  <Badge tone={STATUS_TONE[p.status as keyof typeof STATUS_TONE] ?? "neutral"}>{p.status}</Badge>
+                </div>
+              </div>
+              <div className="flex flex-1 flex-col gap-1 p-4">
+                <p className="truncate text-sm font-semibold text-text-dark">{p.name}</p>
+                <p className="truncate text-xs text-text-muted">
+                  {brandName_(p.brandId)} · {categoryName_(p.categoryId)}
+                </p>
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="text-sm font-bold tabular-nums text-primary">{formatNaira(p.priceKobo)}</span>
+                  <span className="text-xs tabular-nums text-text-muted">{p.stockQuantity} in stock</span>
+                </div>
+                <button
+                  onClick={() => togglePublish(p)}
+                  className="mt-3 rounded-[var(--radius-sm)] border border-dark-border/60 py-1.5 text-xs font-semibold text-text-medium transition-colors hover:bg-surface"
+                >
+                  {p.status === "published" ? "Unpublish" : "Publish"}
+                </button>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
