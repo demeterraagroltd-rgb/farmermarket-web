@@ -1,13 +1,17 @@
-import { Controller, Get, Param, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards, UsePipes } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
+import { CurrentStaff, type AuthenticatedStaff } from "../../common/decorators/current-staff.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ApplicationsService } from "./applications.service";
+import { DecideApplicationDto, decideApplicationSchema } from "./dto/decide-application.dto";
 
 // The other side of the product loop's step 1 (§2): what the dashboard
-// queue reads. Full review workspace (§11.4) — filters, SLA clock, decision
-// panel — is still ahead; this is "the admin can see what came in."
+// queue reads, and where steps 2-3 (decide, activate) happen. Full review
+// workspace (§11.4) — filters, SLA clock, evidence tabs — is still ahead;
+// this is "the admin can see what came in and act on it."
 @ApiTags("applications")
 @ApiBearerAuth()
 @Controller("admin/applications")
@@ -24,5 +28,15 @@ export class AdminApplicationsController {
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.applicationsService.findOne(id);
+  }
+
+  @Post(":id/decisions")
+  @UsePipes(new ZodValidationPipe(decideApplicationSchema))
+  decide(
+    @Param("id") id: string,
+    @Body() body: DecideApplicationDto,
+    @CurrentStaff() staff: AuthenticatedStaff,
+  ) {
+    return this.applicationsService.decide(id, staff.staffId, body);
   }
 }

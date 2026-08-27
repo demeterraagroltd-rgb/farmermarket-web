@@ -1,9 +1,18 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { desc, eq } from "drizzle-orm";
 import { nairaToKobo } from "@farmermarket/core";
-import { applications, type Db } from "@farmermarket/db";
+import {
+  applications,
+  applicationDecisions,
+  applicationEvents,
+  creditProfiles,
+  creditLimitChanges,
+  users,
+  type Db,
+} from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import type { CreateApplicationInput } from "./dto/create-application.dto";
+import type { DecideApplicationInput } from "./dto/decide-application.dto";
 
 function generateReference(): string {
   const year = new Date().getFullYear();
@@ -11,34 +20,58 @@ function generateReference(): string {
   return `FM-${year}-${digits}`;
 }
 
+const DECIDED_STATUSES = new Set(["approved", "declined"]);
+
+const OUTCOME_TO_STATUS = {
+  approved: "approved",
+  declined: "declined",
+  referred: "escalated",
+} as const;
+
 @Injectable()
 export class ApplicationsService {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   async create(input: CreateApplicationInput) {
-    const [row] = await this.db
-      .insert(applications)
-      .values({
-        reference: generateReference(),
-        channel: "web",
-        status: "submitted",
-        fullName: input.fullName,
-        phone: input.phone,
-        email: input.email,
-        employer: input.employer,
-        employmentType: input.employmentType,
-        jobTitle: input.jobTitle,
-        netMonthlySalaryKobo:
-          input.netMonthlySalaryNaira !== undefined
-            ? nairaToKobo(input.netMonthlySalaryNaira)
-            : undefined,
-        requestedLimitKobo: nairaToKobo(input.requestedLimitNaira),
-        salaryDay: input.salaryDay,
-        submittedAt: new Date(),
-      })
-      .returning();
+    return this.db.transaction(async (tx) => {
+      // No phone-OTP signup yet (Termii isn't wired up), so this is the
+      // stand-in identity step: reuse a customer record by phone, or create
+      // one. Swap for real OTP-verified signup once Termii lands (§14).
+      const [existingUser] = await tx.select().from(users).where(eq(users.phone, input.phone)).limit(1);
+      const user =
+        existingUser ??
+        (
+          await tx
+            .insert(users)
+            .values({ phone: input.phone, fullName: input.fullName, email: input.email })
+            .returning()
+        )[0];
 
-    return row;
+      const [row] = await tx
+        .insert(applications)
+        .values({
+          reference: generateReference(),
+          userId: user.id,
+          channel: "web",
+          status: "submitted",
+          fullName: input.fullName,
+          phone: input.phone,
+          email: input.email,
+          employer: input.employer,
+          employmentType: input.employmentType,
+          jobTitle: input.jobTitle,
+          netMonthlySalaryKobo:
+            input.netMonthlySalaryNaira !== undefined
+              ? nairaToKobo(input.netMonthlySalaryNaira)
+              : undefined,
+          requestedLimitKobo: nairaToKobo(input.requestedLimitNaira),
+          salaryDay: input.salaryDay,
+          submittedAt: new Date(),
+        })
+        .returning();
+
+      return row;
+    });
   }
 
   async findAll() {
@@ -49,5 +82,90 @@ export class ApplicationsService {
     const [row] = await this.db.select().from(applications).where(eq(applications.id, id)).limit(1);
     if (!row) throw new NotFoundException("Application not found");
     return row;
+  }
+
+  // Product loop steps 2-3 (§2): a decision, and — if approved — the write
+  // that actually unlocks spending. Both happen in one transaction so a
+  // credit_profiles update never exists without its audit trail, or vice versa.
+  async decide(applicationId: string, decidedBy: string, input: DecideApplicationInput) {
+    return this.db.transaction(async (tx) => {
+      const [application] = await tx
+        .select()
+        .from(applications)
+        .where(eq(applications.id, applicationId))
+        .limit(1);
+      if (!application) throw new NotFoundException("Application not found");
+      if (DECIDED_STATUSES.has(application.status)) {
+        throw new BadRequestException(`Application is already ${application.status}`);
+      }
+
+      const approvedLimitKobo =
+        input.outcome === "approved" && input.approvedLimitNaira !== undefined
+          ? nairaToKobo(input.approvedLimitNaira)
+          : undefined;
+
+      const [decision] = await tx
+        .insert(applicationDecisions)
+        .values({
+          applicationId,
+          outcome: input.outcome,
+          approvedLimitKobo,
+          reasonCodes: input.reasonCodes ?? [],
+          notes: input.notes,
+          decidedBy,
+        })
+        .returning();
+
+      const toStatus = OUTCOME_TO_STATUS[input.outcome];
+      await tx
+        .update(applications)
+        .set({ status: toStatus, updatedAt: new Date() })
+        .where(eq(applications.id, applicationId));
+
+      await tx.insert(applicationEvents).values({
+        applicationId,
+        actorStaffId: decidedBy,
+        fromStatus: application.status,
+        toStatus,
+        reason: input.notes,
+      });
+
+      if (input.outcome === "approved" && approvedLimitKobo !== undefined && application.userId) {
+        const [existingProfile] = await tx
+          .select()
+          .from(creditProfiles)
+          .where(eq(creditProfiles.userId, application.userId))
+          .limit(1);
+        const beforeKobo = existingProfile?.creditLimitKobo ?? 0n;
+
+        if (existingProfile) {
+          await tx
+            .update(creditProfiles)
+            .set({ creditLimitKobo: approvedLimitKobo, isVerified: true, updatedAt: new Date() })
+            .where(eq(creditProfiles.userId, application.userId));
+        } else {
+          await tx.insert(creditProfiles).values({
+            userId: application.userId,
+            creditLimitKobo: approvedLimitKobo,
+            isVerified: true,
+          });
+        }
+
+        await tx.insert(creditLimitChanges).values({
+          userId: application.userId,
+          beforeKobo,
+          afterKobo: approvedLimitKobo,
+          reason: `Application ${application.reference} approved`,
+          actorStaffId: decidedBy,
+        });
+
+        await tx
+          .update(applications)
+          .set({ status: "limit_active" })
+          .where(eq(applications.id, applicationId));
+      }
+
+      return decision;
+    });
   }
 }
