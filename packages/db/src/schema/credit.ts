@@ -1,7 +1,7 @@
 import { check, bigint, pgTable, smallint, text, timestamp, uuid, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { users } from "./identity";
-import { staff } from "./identity";
+import { users } from "./identity.js";
+import { staff } from "./identity.js";
 
 // What the phone app reads. `withinLimit` is what makes over-spending
 // structurally impossible — Firestore could not express this (§5.3).

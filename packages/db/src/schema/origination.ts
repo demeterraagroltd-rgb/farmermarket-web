@@ -1,6 +1,6 @@
 import { bigint, char, check, date, jsonb, numeric, pgEnum, pgTable, smallint, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { users, staff } from "./identity";
+import { users, staff } from "./identity.js";
 
 export const applicationStatusEnum = pgEnum("application_status", [
   "draft", "submitted", "auto_checks", "info_required", "credit_review",

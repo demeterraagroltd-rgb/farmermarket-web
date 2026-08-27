@@ -1,6 +1,6 @@
 import { bigint, boolean, check, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { staff } from "./identity";
+import { staff } from "./identity.js";
 
 export const categories = pgTable("categories", {
   id: uuid("id").primaryKey().defaultRandom(),

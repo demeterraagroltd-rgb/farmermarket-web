@@ -1,5 +1,5 @@
 import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import { staff } from "./identity";
+import { staff } from "./identity.js";
 
 // One row per privileged action: decisions, limit changes, role changes,
 // PII unmasking, exports, publishes (§13). Append-only — UPDATE/DELETE

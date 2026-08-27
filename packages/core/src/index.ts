@@ -1,2 +1,2 @@
-export * from "./money";
-export * from "./scorecard";
+export * from "./money.js";
+export * from "./scorecard.js";

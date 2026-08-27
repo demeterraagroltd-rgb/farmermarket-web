@@ -2,7 +2,7 @@
 # is "push this image to ECR," not a rewrite.
 FROM node:20-slim AS base
 RUN corepack enable
-WORKDIR /repo
+WORKDIR /app
 
 FROM base AS deps
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
@@ -13,12 +13,24 @@ RUN pnpm install --frozen-lockfile --filter @farmermarket/api...
 
 FROM deps AS build
 COPY . .
-RUN pnpm --filter @farmermarket/api build
+# @farmermarket/db and @farmermarket/core ship a real `dist/`, not raw .ts —
+# a plain `node dist/main.js` can require() compiled JS, but not a workspace
+# dependency's TypeScript source (Next.js can, via its bundler; this can't).
+# `--filter @farmermarket/api...` builds api plus everything it depends on,
+# in dependency order, so this one command covers all three packages.
+RUN pnpm --filter @farmermarket/api... run build
+# @farmermarket/db's workspace symlink otherwise points at ../../packages/db,
+# which doesn't exist once only this stage's output is copied into the
+# runner stage. `pnpm deploy` resolves workspace deps into real files inside
+# the target dir instead, making it copyable on its own.
+RUN pnpm --filter=@farmermarket/api --prod deploy /app/deploy
 
 FROM base AS runner
 ENV NODE_ENV=production
-COPY --from=build /repo/apps/api/dist ./apps/api/dist
-COPY --from=build /repo/apps/api/node_modules ./apps/api/node_modules
-COPY --from=build /repo/node_modules ./node_modules
+WORKDIR /app/deploy
+# Deploying to the same absolute path in both stages, rather than renaming
+# it on the way in, protects against pnpm's deployed node_modules using
+# absolute (not relative) symlinks internally — same path in, same path out.
+COPY --from=build /app/deploy /app/deploy
 EXPOSE 3001
-CMD ["node", "apps/api/dist/main.js"]
+CMD ["node", "dist/main.js"]
