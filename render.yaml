@@ -1,10 +1,21 @@
 # The only Render-specific file in the repo (§4.4, portability rule #1).
 # Everything it points at is a plain Dockerfile, so the eventual AWS move
 # is "build image, push to ECR, run on ECS/App Runner" rather than a rewrite.
+#
+# Everything below runs on Render's free tier. Two things that implies:
+# - farmermarket-postgres expires 30 days after creation unless upgraded —
+#   fine for early testing, but put a reminder somewhere before that date.
+# - farmermarket-api "spins down" after 15 minutes of inactivity and takes
+#   a few seconds to wake back up on the next request. Expected on free.
+#
+# farmermarket-worker (BullMQ) is deliberately NOT included yet — Render has
+# no free tier for background workers, and the worker has no real jobs to
+# run yet anyway (see apps/worker/src/index.ts). Add it back here, on a paid
+# plan, once there's an actual job to run.
 
 databases:
   - name: farmermarket-postgres
-    plan: standard
+    plan: free
     region: frankfurt
     postgresMajorVersion: "16"
 
@@ -13,6 +24,7 @@ services:
     name: farmermarket-api
     runtime: docker
     dockerfilePath: ./infra/docker/Dockerfile.api
+    plan: free
     region: frankfurt
     envVars:
       - key: DATABASE_URL
@@ -27,24 +39,8 @@ services:
           name: farmermarket-redis
           property: connectionString
 
-  - type: worker
-    name: farmermarket-worker
-    runtime: docker
-    dockerfilePath: ./infra/docker/Dockerfile.worker
-    region: frankfurt
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: farmermarket-postgres
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: farmermarket-redis
-          property: connectionString
-
   - type: redis
     name: farmermarket-redis
-    plan: standard
+    plan: free
     region: frankfurt
     ipAllowList: []
