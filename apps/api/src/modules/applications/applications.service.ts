@@ -84,6 +84,22 @@ export class ApplicationsService {
     return row;
   }
 
+  // Manual verification checklist (no Mono/FirstCentral automating this
+  // yet) — a real underwriting gate, not a UI-only toggle. decide() below
+  // refuses to approve until all three are true.
+  async setVerification(
+    id: string,
+    updates: Partial<{ identityVerified: boolean; employerVerified: boolean; documentsVerified: boolean }>,
+  ) {
+    const [row] = await this.db
+      .update(applications)
+      .set(updates)
+      .where(eq(applications.id, id))
+      .returning();
+    if (!row) throw new NotFoundException("Application not found");
+    return row;
+  }
+
   // Product loop steps 2-3 (§2): a decision, and — if approved — the write
   // that actually unlocks spending. Both happen in one transaction so a
   // credit_profiles update never exists without its audit trail, or vice versa.
@@ -97,6 +113,14 @@ export class ApplicationsService {
       if (!application) throw new NotFoundException("Application not found");
       if (DECIDED_STATUSES.has(application.status)) {
         throw new BadRequestException(`Application is already ${application.status}`);
+      }
+      if (
+        input.outcome === "approved" &&
+        !(application.identityVerified && application.employerVerified && application.documentsVerified)
+      ) {
+        throw new BadRequestException(
+          "Complete identity, employment, and document verification before approving",
+        );
       }
 
       const approvedLimitKobo =

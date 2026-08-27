@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
+import { formatNaira, formatDate } from "../../../../lib/format";
+import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
+import { Badge } from "../../../../components/ui/Badge";
 
 interface Customer {
   id: string;
@@ -14,13 +17,6 @@ interface Customer {
   usedCreditKobo: string | null;
   tier: string | null;
   isVerified: boolean | null;
-}
-
-function formatNaira(kobo: string | null): string {
-  if (kobo === null) return "—";
-  return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(
-    Number(kobo) / 100,
-  );
 }
 
 // Stand-in for the real 360° customer view (§11.4) — order history,
@@ -52,43 +48,45 @@ export default function CustomersPage() {
   }, []);
 
   return (
-    <main className="p-8">
-      <h1 className="text-2xl font-bold text-text-dark">Customers</h1>
-      <p className="mt-1 text-sm text-text-medium">
-        Everyone who's applied, with their current credit limit if they have one.
-      </p>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Customers"
+        description="Everyone who's applied, with their current credit limit if they have one."
+      />
 
-      {error && <p className="mt-4 text-sm text-error">{error}</p>}
-      {customers?.length === 0 && <p className="mt-6 text-text-medium">No customers yet.</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
+      {customers?.length === 0 && <EmptyState label="No customers yet." />}
 
       {customers && customers.length > 0 && (
-        <div className="mt-6 overflow-x-auto rounded-lg border border-dark-border">
+        <Card className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-primary-surface text-text-dark">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Credit limit</th>
-                <th className="px-4 py-3">Used</th>
-                <th className="px-4 py-3">Tier</th>
-                <th className="px-4 py-3">Joined</th>
+            <thead>
+              <tr className="border-b border-dark-border/60 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                <th className="px-5 py-3">Name</th>
+                <th className="px-5 py-3">Phone</th>
+                <th className="px-5 py-3">Credit limit</th>
+                <th className="px-5 py-3">Used</th>
+                <th className="px-5 py-3">Tier</th>
+                <th className="px-5 py-3">Joined</th>
               </tr>
             </thead>
             <tbody>
               {customers.map((c) => (
-                <tr key={c.id} className="border-t border-dark-border">
-                  <td className="px-4 py-3">{c.fullName ?? "—"}</td>
-                  <td className="px-4 py-3">{c.phone}</td>
-                  <td className="px-4 py-3">{formatNaira(c.creditLimitKobo)}</td>
-                  <td className="px-4 py-3">{formatNaira(c.usedCreditKobo)}</td>
-                  <td className="px-4 py-3">{c.tier ?? "—"}</td>
-                  <td className="px-4 py-3">{new Date(c.createdAt).toLocaleDateString()}</td>
+                <tr key={c.id} className="border-b border-dark-border/40 last:border-0">
+                  <td className="px-5 py-3 text-text-dark">{c.fullName ?? "—"}</td>
+                  <td className="px-5 py-3 text-text-medium">{c.phone}</td>
+                  <td className="px-5 py-3 tabular-nums text-text-dark">{formatNaira(c.creditLimitKobo)}</td>
+                  <td className="px-5 py-3 tabular-nums text-text-medium">{formatNaira(c.usedCreditKobo)}</td>
+                  <td className="px-5 py-3">
+                    {c.tier ? <Badge tone="gold">{c.tier}</Badge> : <span className="text-text-muted">—</span>}
+                  </td>
+                  <td className="px-5 py-3 text-text-medium">{formatDate(c.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
-    </main>
+    </div>
   );
 }

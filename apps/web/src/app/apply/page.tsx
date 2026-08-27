@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Card } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
+import { Input, Select } from "../../components/ui/Field";
 
 // Submits to POST /v1/applications (public — apps/api/src/modules/applications).
 // Deliberately narrower than the plan's six-step wizard (§11.3): no phone
@@ -59,91 +62,84 @@ export default function ApplyPage() {
   if (submitted) {
     return (
       <main className="mx-auto max-w-xl px-6 py-16 text-center">
-        <h1 className="text-2xl font-bold text-text-dark">Application submitted</h1>
-        <p className="mt-2 text-text-medium">
-          Your reference is <span className="font-semibold text-primary">{submitted.reference}</span>.
-          A credit officer will review it shortly.
-        </p>
+        <Card className="p-8">
+          <h1 className="text-2xl font-bold text-text-dark">Application submitted</h1>
+          <p className="mt-2 text-text-medium">
+            Your reference is <span className="font-semibold text-primary">{submitted.reference}</span>.
+            A credit officer will review it shortly.
+          </p>
+        </Card>
       </main>
     );
   }
 
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
-      <h1 className="mb-2 text-2xl font-bold text-text-dark">Apply for a credit limit</h1>
+      <h1 className="mb-2 text-2xl font-bold tracking-tight text-text-dark">Apply for a credit limit</h1>
       <p className="mb-6 text-text-medium">
-        Tell us about yourself and how much you'd like to spend. A credit officer reviews every
+        Tell us about yourself and how much you&apos;d like to spend. A credit officer reviews every
         application before a limit goes live.
       </p>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <input
-          placeholder="Full name"
-          value={form.fullName}
-          onChange={(e) => update("fullName", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-          required
-        />
-        <input
-          placeholder="Phone number"
-          value={form.phone}
-          onChange={(e) => update("phone", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-          required
-        />
-        <input
-          type="email"
-          placeholder="Email (optional)"
-          value={form.email}
-          onChange={(e) => update("email", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-        />
-        <input
-          placeholder="Employer (optional)"
-          value={form.employer}
-          onChange={(e) => update("employer", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-        />
-        <select
-          value={form.employmentType}
-          onChange={(e) => update("employmentType", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-        >
-          <option value="">Employment type (optional)</option>
-          <option value="Government">Government</option>
-          <option value="Private">Private</option>
-        </select>
-        <input
-          placeholder="Job title (optional)"
-          value={form.jobTitle}
-          onChange={(e) => update("jobTitle", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-        />
-        <input
-          type="number"
-          placeholder="Net monthly salary, ₦ (optional)"
-          value={form.netMonthlySalaryNaira}
-          onChange={(e) => update("netMonthlySalaryNaira", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-          min={0}
-        />
-        <input
-          type="number"
-          placeholder="Requested credit limit, ₦"
-          value={form.requestedLimitNaira}
-          onChange={(e) => update("requestedLimitNaira", e.target.value)}
-          className="rounded-md border border-dark-border px-3 py-2"
-          min={1}
-          required
-        />
-        {error && <p className="text-sm text-error">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50"
-        >
-          {loading ? "Submitting…" : "Submit application"}
-        </button>
-      </form>
+      <Card className="p-6">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <Input
+            label="Full name"
+            value={form.fullName}
+            onChange={(e) => update("fullName", e.target.value)}
+            required
+          />
+          <Input
+            label="Phone number"
+            value={form.phone}
+            onChange={(e) => update("phone", e.target.value)}
+            required
+          />
+          <Input
+            type="email"
+            label="Email (optional)"
+            value={form.email}
+            onChange={(e) => update("email", e.target.value)}
+          />
+          <Input
+            label="Employer (optional)"
+            value={form.employer}
+            onChange={(e) => update("employer", e.target.value)}
+          />
+          <Select
+            label="Employment type (optional)"
+            value={form.employmentType}
+            onChange={(e) => update("employmentType", e.target.value)}
+          >
+            <option value=""></option>
+            <option value="Government">Government</option>
+            <option value="Private">Private</option>
+          </Select>
+          <Input
+            label="Job title (optional)"
+            value={form.jobTitle}
+            onChange={(e) => update("jobTitle", e.target.value)}
+          />
+          <Input
+            type="number"
+            label="Net monthly salary, ₦ (optional)"
+            value={form.netMonthlySalaryNaira}
+            onChange={(e) => update("netMonthlySalaryNaira", e.target.value)}
+            min={0}
+          />
+          <Input
+            type="number"
+            label="Requested credit limit, ₦"
+            value={form.requestedLimitNaira}
+            onChange={(e) => update("requestedLimitNaira", e.target.value)}
+            min={1}
+            required
+          />
+          {error && <p className="text-sm text-error">{error}</p>}
+          <Button type="submit" disabled={loading}>
+            {loading ? "Submitting…" : "Submit application"}
+          </Button>
+        </form>
+      </Card>
     </main>
   );
 }

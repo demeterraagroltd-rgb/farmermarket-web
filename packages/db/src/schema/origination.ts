@@ -1,4 +1,4 @@
-import { bigint, char, check, date, jsonb, numeric, pgEnum, pgTable, smallint, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, char, check, date, jsonb, numeric, pgEnum, pgTable, smallint, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users, staff } from "./identity.js";
 
@@ -32,7 +32,14 @@ export const applications = pgTable(
     netMonthlySalaryKobo: bigint("net_monthly_salary_kobo", { mode: "bigint" }),
     salaryDay: smallint("salary_day"),
     yearsEmployed: numeric("years_employed", { precision: 4, scale: 1 }),
-    employerVerified: text("employer_verified").default("false"),
+
+    // Manual verification checklist — a real underwriting gate, not
+    // automated (no Mono/FirstCentral yet, §9). All three must be true
+    // before an application can be approved; see decline_needs_reason-style
+    // enforcement in ApplicationsService.decide().
+    identityVerified: boolean("identity_verified").notNull().default(false),
+    employerVerified: boolean("employer_verified").notNull().default(false),
+    documentsVerified: boolean("documents_verified").notNull().default(false),
 
     bankName: text("bank_name"),
     accountLast4: char("account_last4", { length: 4 }),

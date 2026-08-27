@@ -8,6 +8,13 @@
       "when": 1787795906987,
       "tag": "0000_gray_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787813770710,
+      "tag": "0001_whole_stranger",
+      "breakpoints": true
     }
   ]
 }

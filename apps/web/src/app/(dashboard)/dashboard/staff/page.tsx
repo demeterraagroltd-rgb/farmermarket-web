@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
+import { formatDate } from "../../../../lib/format";
+import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
+import { Badge } from "../../../../components/ui/Badge";
+import { Button } from "../../../../components/ui/Button";
+import { Input, Select } from "../../../../components/ui/Field";
 
 interface StaffMember {
   id: string;
@@ -18,6 +23,13 @@ interface NewStaffCredentials {
   totpSecret: string;
   otpauthUrl: string;
 }
+
+const ROLE_TONE: Record<string, "gold" | "info" | "success" | "neutral"> = {
+  super_admin: "gold",
+  admin: "info",
+  credit: "success",
+  sales: "neutral",
+};
 
 // "Staff CRUD & role assignment" (§11.4) — super_admin only (§6.2). The
 // created account's MFA secret is shown exactly once, here, right after
@@ -74,92 +86,94 @@ export default function StaffPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-bold text-text-dark">Staff</h1>
+    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <PageHeader title="Staff" description="Accounts that can sign in to this dashboard." />
 
       {newCredentials && (
-        <div className="mt-4 rounded-lg border border-gold bg-primary-surface p-4">
-          <p className="font-semibold text-text-dark">
-            Account created for {newCredentials.email} — save this now, it won't be shown again:
+        <Card className="border-gold/40 bg-gold/5 p-5">
+          <p className="text-sm font-semibold text-text-dark">
+            Account created for {newCredentials.email} — save this now, it won&apos;t be shown again:
           </p>
           <p className="mt-2 font-mono text-sm text-text-dark">TOTP secret: {newCredentials.totpSecret}</p>
-          <p className="mt-1 break-all font-mono text-xs text-text-medium">{newCredentials.otpauthUrl}</p>
-        </div>
+          <p className="mt-1 break-all font-mono text-xs text-text-muted">{newCredentials.otpauthUrl}</p>
+        </Card>
       )}
 
-      <form onSubmit={handleCreate} className="mt-6 flex flex-wrap items-end gap-3 rounded-lg border border-dark-border p-4">
-        <input
-          type="email"
-          placeholder="Email"
-          value={form.email}
-          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-          className="rounded-md border border-dark-border px-3 py-2"
-          required
-        />
-        <input
-          placeholder="Full name"
-          value={form.fullName}
-          onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
-          className="rounded-md border border-dark-border px-3 py-2"
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password (min 8 chars)"
-          value={form.password}
-          onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-          className="rounded-md border border-dark-border px-3 py-2"
-          minLength={8}
-          required
-        />
-        <select
-          value={form.role}
-          onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-          className="rounded-md border border-dark-border px-3 py-2"
-        >
-          <option value="sales">sales</option>
-          <option value="credit">credit</option>
-          <option value="admin">admin</option>
-          <option value="super_admin">super_admin</option>
-        </select>
-        <button
-          type="submit"
-          disabled={creating}
-          className="rounded-md bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50"
-        >
-          {creating ? "Creating…" : "Create staff account"}
-        </button>
-        {createError && <p className="w-full text-sm text-error">{createError}</p>}
-      </form>
+      <Card className="p-5">
+        <h2 className="text-sm font-semibold text-text-dark">Create a staff account</h2>
+        <form onSubmit={handleCreate} className="mt-4 grid grid-cols-2 gap-4">
+          <Input
+            type="email"
+            label="Email"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            required
+          />
+          <Input
+            label="Full name"
+            value={form.fullName}
+            onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
+            required
+          />
+          <Input
+            type="password"
+            label="Password (min 8 chars)"
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            minLength={8}
+            required
+          />
+          <Select
+            label="Role"
+            value={form.role}
+            onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+          >
+            <option value="sales">sales</option>
+            <option value="credit">credit</option>
+            <option value="admin">admin</option>
+            <option value="super_admin">super_admin</option>
+          </Select>
+          <Button type="submit" disabled={creating} className="col-span-2 self-start">
+            {creating ? "Creating…" : "Create staff account"}
+          </Button>
+          {createError && <p className="col-span-2 text-sm text-error">{createError}</p>}
+        </form>
+      </Card>
 
-      {error && <p className="mt-4 text-sm text-error">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
 
-      {staffList && (
-        <div className="mt-6 overflow-x-auto rounded-lg border border-dark-border">
+      {staffList?.length === 0 && <EmptyState label="No staff accounts yet." />}
+
+      {staffList && staffList.length > 0 && (
+        <Card className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-primary-surface text-text-dark">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3">Created</th>
+            <thead>
+              <tr className="border-b border-dark-border/60 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                <th className="px-5 py-3">Name</th>
+                <th className="px-5 py-3">Email</th>
+                <th className="px-5 py-3">Role</th>
+                <th className="px-5 py-3">Active</th>
+                <th className="px-5 py-3">Created</th>
               </tr>
             </thead>
             <tbody>
               {staffList.map((s) => (
-                <tr key={s.id} className="border-t border-dark-border">
-                  <td className="px-4 py-3">{s.fullName}</td>
-                  <td className="px-4 py-3">{s.email}</td>
-                  <td className="px-4 py-3">{s.role}</td>
-                  <td className="px-4 py-3">{s.isActive ? "Yes" : "No"}</td>
-                  <td className="px-4 py-3">{new Date(s.createdAt).toLocaleString()}</td>
+                <tr key={s.id} className="border-b border-dark-border/40 last:border-0">
+                  <td className="px-5 py-3 text-text-dark">{s.fullName}</td>
+                  <td className="px-5 py-3 text-text-medium">{s.email}</td>
+                  <td className="px-5 py-3">
+                    <Badge tone={ROLE_TONE[s.role] ?? "neutral"}>{s.role}</Badge>
+                  </td>
+                  <td className="px-5 py-3">
+                    <Badge tone={s.isActive ? "success" : "error"}>{s.isActive ? "Active" : "Inactive"}</Badge>
+                  </td>
+                  <td className="px-5 py-3 text-text-medium">{formatDate(s.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
-    </main>
+    </div>
   );
 }

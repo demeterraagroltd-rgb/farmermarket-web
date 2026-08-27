@@ -93,7 +93,7 @@ docker compose up -d          # Postgres, Redis, MinIO
 pnpm install
 pnpm --filter @farmermarket/db generate   # generate SQL from the Drizzle schema
 pnpm --filter @farmermarket/db migrate    # apply it
-psql $DATABASE_URL -f packages/db/migrations/0001_manual_triggers.sql  # maker-checker + ledger-balance triggers
+psql $DATABASE_URL -f packages/db/manual-migrations/triggers.sql  # maker-checker + ledger-balance triggers
 pnpm db:seed                   # seeds the four BNPL plans
 pnpm db:seed-staff you@example.com "a-real-password" super_admin
 # ^ prints a TOTP secret and a live 6-digit code — use it immediately

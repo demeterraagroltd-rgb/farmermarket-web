@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -7,6 +7,7 @@ import { CurrentStaff, type AuthenticatedStaff } from "../../common/decorators/c
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ApplicationsService } from "./applications.service";
 import { DecideApplicationDto, decideApplicationSchema } from "./dto/decide-application.dto";
+import { VerifyApplicationDto, verifyApplicationSchema } from "./dto/verify-application.dto";
 
 // The other side of the product loop's step 1 (§2): what the dashboard
 // queue reads, and where steps 2-3 (decide, activate) happen. Full review
@@ -28,6 +29,14 @@ export class AdminApplicationsController {
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.applicationsService.findOne(id);
+  }
+
+  @Patch(":id/verification")
+  setVerification(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(verifyApplicationSchema)) body: VerifyApplicationDto,
+  ) {
+    return this.applicationsService.setVerification(id, body);
   }
 
   @Post(":id/decisions")

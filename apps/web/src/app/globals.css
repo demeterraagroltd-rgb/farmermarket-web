@@ -37,11 +37,20 @@
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  /* --font-inter is set by next/font/google in layout.tsx (self-hosted at
+     build time). Referencing it by name here, rather than both this file
+     and next/font targeting --font-sans directly, avoids a cascade-order
+     fight over the same custom property on the same element. */
+  --font-sans: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+
+  /* Card shadow, ported from AppColors.cardShadow in app_colors.dart —
+     the brand green at low opacity, not a generic grey shadow. */
+  --shadow-card: 0 8px 20px -4px rgb(26 122 76 / 0.12);
 }
 
 body {
   background: var(--color-off-white);
   color: var(--color-text-dark);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
