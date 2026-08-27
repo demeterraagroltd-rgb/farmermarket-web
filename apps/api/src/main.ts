@@ -7,6 +7,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix("v1", { exclude: ["health"] });
 
+  // The web app and API are different origins (Vercel vs Render), so the
+  // browser needs an explicit allow-list here — NestJS sends no
+  // Access-Control-Allow-Origin header by default.
+  const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
+    .split(",")
+    .map((origin) => origin.trim());
+  app.enableCors({ origin: allowedOrigins, credentials: true });
+
   // Feeds packages/contracts' codegen pipeline (§5.6).
   const config = new DocumentBuilder()
     .setTitle("Farmer Market API")

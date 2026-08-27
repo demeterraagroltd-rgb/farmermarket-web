@@ -38,6 +38,8 @@ services:
           type: redis
           name: farmermarket-redis
           property: connectionString
+      - key: CORS_ORIGINS
+        value: https://farmermarket-web-api.vercel.app,http://localhost:3000
 
   - type: redis
     name: farmermarket-redis
