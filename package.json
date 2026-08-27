@@ -17,16 +17,20 @@
     "db:generate": "pnpm --filter @farmermarket/db generate",
     "db:migrate": "pnpm --filter @farmermarket/db migrate",
     "db:seed": "tsx scripts/seed.ts",
-    "db:seed-staff": "tsx scripts/seed-staff.ts"
+    "db:seed-staff": "tsx scripts/seed-staff.ts",
+    "import:catalog": "tsx --env-file=.env scripts/import-flutter-catalog.ts"
   },
   "dependencies": {
+    "@farmermarket/core": "workspace:*",
     "@farmermarket/db": "workspace:*",
     "argon2": "^0.41.1",
+    "drizzle-orm": "^0.38.2",
     "otplib": "^12.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "typescript": "^5.7.2",
-    "tsx": "^4.19.2"
+    "cloudinary": "^2.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
   }
 }

@@ -12,6 +12,8 @@ import {
   PeopleIcon,
   BoxIcon,
   BadgeCheckIcon,
+  BankIcon,
+  DocumentIcon,
   LogOutIcon,
 } from "../../components/ui/icons";
 
@@ -25,6 +27,8 @@ const NAV: Array<{ href: string; label: string; icon: typeof GridIcon; roles: St
   { href: "/dashboard", label: "Applications", icon: InboxIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/customers", label: "Customers", icon: PeopleIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/catalog", label: "Catalog", icon: BoxIcon, roles: ["super_admin", "admin"] },
+  { href: "/dashboard/orders", label: "Orders", icon: DocumentIcon, roles: ["super_admin", "admin", "credit"] },
+  { href: "/dashboard/repayments", label: "Repayments", icon: BankIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/staff", label: "Staff", icon: BadgeCheckIcon, roles: ["super_admin"] },
 ];
 

@@ -8,6 +8,7 @@ import {
   bnplPlans,
   creditProfiles,
   repaymentSchedules,
+  users,
   type Db,
   type Tx,
 } from "@farmermarket/db";
@@ -48,6 +49,48 @@ export class OrdersService {
   private async attachItems(order: typeof orders.$inferSelect) {
     const items = await this.db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
     return this.toResponse(order, items);
+  }
+
+  // ── Staff / dashboard ────────────────────────────────────────────────────
+
+  async findAllForStaff() {
+    const rows = await this.db
+      .select({
+        order: orders,
+        buyerName: users.fullName,
+        buyerPhone: users.phone,
+        planName: bnplPlans.name,
+      })
+      .from(orders)
+      .leftJoin(users, eq(orders.userId, users.id))
+      .leftJoin(bnplPlans, eq(orders.bnplPlanId, bnplPlans.id))
+      .orderBy(desc(orders.placedAt));
+
+    return Promise.all(
+      rows.map(async ({ order, buyerName, buyerPhone, planName }) => {
+        const items = await this.db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+        return {
+          ...this.toResponse(order, items),
+          buyerName: buyerName ?? null,
+          buyerPhone: buyerPhone ?? null,
+          bnplPlanName: planName ?? null,
+        };
+      }),
+    );
+  }
+
+  async updateStatus(orderId: string, status: (typeof orders.status.enumValues)[number]) {
+    const [row] = await this.db
+      .update(orders)
+      .set({
+        status,
+        deliveredAt: status === "delivered" ? new Date() : undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+    if (!row) throw new NotFoundException("Order not found");
+    return this.attachItems(row);
   }
 
   /**

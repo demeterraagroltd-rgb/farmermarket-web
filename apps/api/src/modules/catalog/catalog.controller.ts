@@ -30,4 +30,11 @@ export class CatalogController {
   listBnplPlans() {
     return this.catalogService.listActiveBnplPlans();
   }
+
+  // Promo carousel on the app home + marketplace. Was `MockData.brandBanners`
+  // in Dart; managed from the dashboard now.
+  @Get("banners")
+  listBanners() {
+    return this.catalogService.listActiveBanners();
+  }
 }

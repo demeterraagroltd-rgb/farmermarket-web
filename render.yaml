@@ -40,6 +40,12 @@ services:
           property: connectionString
       - key: CORS_ORIGINS
         value: https://farmermarket-web-api.vercel.app,http://localhost:3000
+      # Cloudinary media store for catalog images. The API has no server-side
+      # upload endpoint yet (catalog forms take an image URL), so this is
+      # declared but unused for now — set the real value in the Render
+      # dashboard (Environment tab). Format: cloudinary://<key>:<secret>@<cloud>
+      - key: CLOUDINARY_URL
+        sync: false
 
   - type: redis
     name: farmermarket-redis

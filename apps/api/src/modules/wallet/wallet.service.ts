@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { koboToNaira, nairaToKobo } from "@farmermarket/core";
 import {
   creditProfiles,
@@ -7,6 +7,7 @@ import {
   repaymentSchedules,
   repayments,
   bnplPlans,
+  users,
   type Db,
 } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
@@ -152,16 +153,29 @@ export class WalletService {
   // money in the ledger, the same "record what happened, wire the real rail
   // in later" pattern as the rest of Phase 4.
   async payRepayment(userId: string, scheduleId: string, input: PayRepaymentInput) {
+    return this._recordRepayment(scheduleId, input.amountNaira, userId);
+  }
+
+  // Staff-initiated equivalent (dashboard collections) — same money movement,
+  // any customer's schedule, no caller-scope check.
+  async recordRepayment(scheduleId: string, amountNaira: number) {
+    return this._recordRepayment(scheduleId, amountNaira, undefined);
+  }
+
+  private async _recordRepayment(scheduleId: string, amountNaira: number, expectedUserId?: string) {
     return this.db.transaction(async (tx) => {
       const [schedule] = await tx
         .select()
         .from(repaymentSchedules)
-        .where(and(eq(repaymentSchedules.id, scheduleId), eq(repaymentSchedules.userId, userId)))
+        .where(eq(repaymentSchedules.id, scheduleId))
         .limit(1);
-      if (!schedule) throw new NotFoundException("Repayment schedule not found");
+      if (!schedule || (expectedUserId && schedule.userId !== expectedUserId)) {
+        throw new NotFoundException("Repayment schedule not found");
+      }
       if (schedule.isPaid) throw new BadRequestException("This installment is already paid");
+      const userId = schedule.userId;
 
-      const amountKobo = nairaToKobo(input.amountNaira);
+      const amountKobo = nairaToKobo(amountNaira);
       const newPaidKobo = schedule.amountPaidKobo + amountKobo;
       if (newPaidKobo > schedule.amountKobo) {
         throw new BadRequestException("Amount exceeds what's owed on this installment");
@@ -198,6 +212,62 @@ export class WalletService {
       ]);
 
       return { success: true };
+    });
+  }
+
+  // ── Staff / dashboard: collections ───────────────────────────────────────
+
+  async listAllRepayments() {
+    const rows = await this.db
+      .select({
+        id: repaymentSchedules.id,
+        orderId: repaymentSchedules.orderId,
+        userId: repaymentSchedules.userId,
+        buyerName: users.fullName,
+        buyerPhone: users.phone,
+        amountKobo: repaymentSchedules.amountKobo,
+        amountPaidKobo: repaymentSchedules.amountPaidKobo,
+        dueDate: repaymentSchedules.dueDate,
+        isPaid: repaymentSchedules.isPaid,
+        installmentNumber: repaymentSchedules.installmentNumber,
+        totalInstallments: repaymentSchedules.totalInstallments,
+        bnplPlanName: bnplPlans.name,
+      })
+      .from(repaymentSchedules)
+      .innerJoin(orders, eq(repaymentSchedules.orderId, orders.id))
+      .innerJoin(bnplPlans, eq(orders.bnplPlanId, bnplPlans.id))
+      .leftJoin(users, eq(repaymentSchedules.userId, users.id))
+      .orderBy(repaymentSchedules.dueDate);
+
+    const now = new Date();
+    return rows.map((r) => {
+      const daysPastDue = r.isPaid ? 0 : Math.max(0, Math.floor((now.getTime() - r.dueDate.getTime()) / 86_400_000));
+      const bucket = r.isPaid
+        ? "paid"
+        : daysPastDue === 0
+          ? "current"
+          : daysPastDue <= 30
+            ? "1-30"
+            : daysPastDue <= 60
+              ? "31-60"
+              : "60+";
+      return {
+        id: r.id,
+        orderId: r.orderId,
+        buyerName: r.buyerName ?? null,
+        buyerPhone: r.buyerPhone ?? null,
+        amount: koboToNaira(r.amountKobo),
+        amountPaid: koboToNaira(r.amountPaidKobo),
+        amountDue: koboToNaira(r.amountKobo - r.amountPaidKobo),
+        dueDate: r.dueDate,
+        isPaid: r.isPaid,
+        isOverdue: !r.isPaid && r.dueDate < now,
+        daysPastDue,
+        bucket,
+        installmentNumber: r.installmentNumber,
+        totalInstallments: r.totalInstallments,
+        bnplPlanName: r.bnplPlanName,
+      };
     });
   }
 }

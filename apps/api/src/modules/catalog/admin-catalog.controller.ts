@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Patch, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -11,8 +11,12 @@ import {
   createCategorySchema,
   CreateBrandDto,
   createBrandSchema,
+  CreateBannerDto,
+  createBannerSchema,
   CreateProductDto,
   createProductSchema,
+  UpdateProductDto,
+  updateProductSchema,
   UpdateProductStatusDto,
   updateProductStatusSchema,
 } from "./dto/catalog.dto";
@@ -65,11 +69,34 @@ export class AdminCatalogController {
     return this.catalogService.createProduct(body, staff.staffId);
   }
 
+  @Patch("products/:id")
+  updateProduct(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductDto,
+  ) {
+    return this.catalogService.updateProduct(id, body);
+  }
+
   @Patch("products/:id/status")
   updateProductStatus(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateProductStatusSchema)) body: UpdateProductStatusDto,
   ) {
     return this.catalogService.updateProductStatus(id, body.status);
+  }
+
+  @Get("banners")
+  listBanners() {
+    return this.catalogService.listActiveBanners();
+  }
+
+  @Post("banners")
+  createBanner(@Body(new ZodValidationPipe(createBannerSchema)) body: CreateBannerDto) {
+    return this.catalogService.createBanner(body);
+  }
+
+  @Delete("banners/:id")
+  deleteBanner(@Param("id") id: string) {
+    return this.catalogService.deleteBanner(id);
   }
 }
