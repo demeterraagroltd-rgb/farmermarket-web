@@ -1,0 +1,20 @@
+{
+  "name": "@farmermarket/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate:spec": "tsx ../../apps/api/src/generate-openapi.ts",
+    "generate:ts-client": "openapi-typescript openapi.json -o src/generated/schema.d.ts",
+    "generate:dart-client": "openapi-generator-cli generate -i openapi.json -g dart-dio -o ../../mobile-client-tmp"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.4",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "farmermarket-web",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @farmermarket/web dev",
+    "dev:api": "pnpm --filter @farmermarket/api dev",
+    "dev:worker": "pnpm --filter @farmermarket/worker dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck && tsc --noEmit -p tsconfig.json",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @farmermarket/db generate",
+    "db:migrate": "pnpm --filter @farmermarket/db migrate",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:seed-staff": "tsx scripts/seed-staff.ts"
+  },
+  "dependencies": {
+    "@farmermarket/db": "workspace:*",
+    "argon2": "^0.41.1",
+    "otplib": "^12.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
+  }
+}

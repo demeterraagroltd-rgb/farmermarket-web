@@ -1,0 +1,77 @@
+"use client";
+
+import { useState } from "react";
+
+// Staff login against POST /v1/auth/staff/login (apps/api/src/modules/auth).
+// Mandatory TOTP field per §6.1 — no password-only path exists.
+export default function StaffLoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/auth/staff/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, totpCode }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? "Login failed");
+      }
+      // Session/token storage strategy lands with the dashboard shell (§11.4).
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
+      <h1 className="mb-6 text-2xl font-bold text-text-dark">Staff sign in</h1>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="rounded-md border border-dark-border px-3 py-2"
+          required
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="rounded-md border border-dark-border px-3 py-2"
+          required
+        />
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="6-digit authenticator code"
+          value={totpCode}
+          onChange={(e) => setTotpCode(e.target.value)}
+          className="rounded-md border border-dark-border px-3 py-2"
+          maxLength={6}
+          required
+        />
+        {error && <p className="text-sm text-error">{error}</p>}
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-md bg-primary px-4 py-2 font-semibold text-white disabled:opacity-50"
+        >
+          {loading ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </main>
+  );
+}

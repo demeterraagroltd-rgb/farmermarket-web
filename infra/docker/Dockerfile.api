@@ -1,0 +1,24 @@
+# Portability rule #1 (§4.4): every service runs in Docker so the AWS move
+# is "push this image to ECR," not a rewrite.
+FROM node:20-slim AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/core/package.json packages/core/package.json
+RUN pnpm install --frozen-lockfile --filter @farmermarket/api...
+
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @farmermarket/api build
+
+FROM base AS runner
+ENV NODE_ENV=production
+COPY --from=build /repo/apps/api/dist ./apps/api/dist
+COPY --from=build /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --from=build /repo/node_modules ./node_modules
+EXPOSE 3001
+CMD ["node", "apps/api/dist/main.js"]

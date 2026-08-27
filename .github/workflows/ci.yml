@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: farmermarket
+          POSTGRES_PASSWORD: farmermarket
+          POSTGRES_DB: farmermarket
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U farmermarket"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://farmermarket:farmermarket@localhost:5432/farmermarket
+      JWT_SECRET: ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+      - run: pnpm -r lint
+      - run: pnpm -r test
+      - run: pnpm -r build
+
+  # Placeholder for §5.6's drift check: fails the build if the OpenAPI spec
+  # and the generated Dart client disagree. Wire this up once apps/api has
+  # real routes worth generating a client from.
+  # contract-drift:
+  #   runs-on: ubuntu-latest
+  #   steps: []

@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+/*
+ * Values must stay in sync with packages/ui/src/tokens.ts, which is the
+ * source of truth (ported from the Flutter app's app_colors.dart, §11.1).
+ * CSS custom properties can't import a TS module, so this file follows it.
+ */
+@theme {
+  --color-primary: #1a7a4c;
+  --color-primary-light: #4caf7e;
+  --color-primary-dark: #0d4f31;
+  --color-primary-surface: #e8f5ee;
+
+  --color-gold: #f5a623;
+  --color-gold-light: #ffd166;
+  --color-gold-dark: #cc8800;
+
+  --color-off-white: #f8faf9;
+  --color-surface: #f0faf5;
+
+  --color-dark-background: #091410;
+  --color-dark-surface: #0f1f18;
+  --color-dark-card: #162b20;
+  --color-dark-border: #1e3b2a;
+
+  --color-text-dark: #0d2119;
+  --color-text-medium: #3a5e4b;
+  --color-text-muted: #7a9d8c;
+
+  --color-success: #10b981;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  --radius-sm: 12px;
+  --radius-md: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background: var(--color-off-white);
+  color: var(--color-text-dark);
+  font-family: var(--font-sans);
+}

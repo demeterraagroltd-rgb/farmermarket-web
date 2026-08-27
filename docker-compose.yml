@@ -1,0 +1,41 @@
+name: farmermarket
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: farmermarket
+      POSTGRES_PASSWORD: farmermarket
+      POSTGRES_DB: farmermarket
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmermarket"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Stands in for S3 in local dev, per the plan's portability rules (§4.4) —
+  # application code only ever talks to the S3 API.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: farmermarket
+      MINIO_ROOT_PASSWORD: farmermarket
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+volumes:
+  pgdata:
+  minio-data:
