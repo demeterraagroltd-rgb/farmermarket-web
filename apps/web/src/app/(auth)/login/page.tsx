@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { setToken } from "../../../lib/auth";
 
 // Staff login against POST /v1/auth/staff/login (apps/api/src/modules/auth).
 // Mandatory TOTP field per §6.1 — no password-only path exists.
 export default function StaffLoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -21,11 +24,12 @@ export default function StaffLoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, totpCode }),
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
         throw new Error(body.message ?? "Login failed");
       }
-      // Session/token storage strategy lands with the dashboard shell (§11.4).
+      setToken(body.accessToken);
+      router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

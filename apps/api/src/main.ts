@@ -3,6 +3,13 @@ import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 
+// Money is bigint kobo throughout the schema (§5, §16), but JSON.stringify
+// can't serialize a raw BigInt — every response with a money field would
+// otherwise crash. Serializing as a string avoids precision loss too.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (this: bigint) {
+  return this.toString();
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix("v1", { exclude: ["health"] });
