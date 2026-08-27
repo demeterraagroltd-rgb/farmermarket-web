@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -31,10 +31,12 @@ export class AdminApplicationsController {
   }
 
   @Post(":id/decisions")
-  @UsePipes(new ZodValidationPipe(decideApplicationSchema))
   decide(
     @Param("id") id: string,
-    @Body() body: DecideApplicationDto,
+    // Scoped to this one parameter, not @UsePipes() at the method level —
+    // that would run the same schema against @Param()/@CurrentStaff() too
+    // and reject every request before it reaches the body at all.
+    @Body(new ZodValidationPipe(decideApplicationSchema)) body: DecideApplicationDto,
     @CurrentStaff() staff: AuthenticatedStaff,
   ) {
     return this.applicationsService.decide(id, staff.staffId, body);
