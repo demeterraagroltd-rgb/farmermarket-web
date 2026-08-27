@@ -32,8 +32,8 @@ packages/
   contracts/ OpenAPI spec + generated TS/Dart clients (pipeline only, not wired to CI yet)
   core/     scorecard engine, money (kobo) helpers — pure TS, no I/O
   ui/       design tokens ported from the Flutter app's app_colors.dart
+render.yaml   the only Render-specific file in the repo (must live at repo root — Render's Blueprint feature requires this exact path)
 infra/
-  render.yaml       the only Render-specific file in the repo
   docker/           Dockerfiles — the AWS-portability guarantee
   aws/              Terraform goes here once the AWS account exists
 scripts/
