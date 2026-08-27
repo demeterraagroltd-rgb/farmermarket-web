@@ -9,8 +9,10 @@ export const creditProfiles = pgTable(
   "credit_profiles",
   {
     userId: uuid("user_id").primaryKey().references(() => users.id),
-    creditLimitKobo: bigint("credit_limit_kobo", { mode: "bigint" }).notNull().default(0n),
-    usedCreditKobo: bigint("used_credit_kobo", { mode: "bigint" }).notNull().default(0n),
+    // A raw bigint literal default (0n) isn't JSON-serializable, which
+    // breaks drizzle-kit's schema snapshot diffing — use a SQL default instead.
+    creditLimitKobo: bigint("credit_limit_kobo", { mode: "bigint" }).notNull().default(sql`0`),
+    usedCreditKobo: bigint("used_credit_kobo", { mode: "bigint" }).notNull().default(sql`0`),
     tier: text("tier").notNull().default("None"),
     score: smallint("score"),
     isVerified: boolean("is_verified").notNull().default(false),
