@@ -26,6 +26,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/dashboard/staff" className="text-sm text-text-medium hover:text-primary">
             Staff
           </Link>
+          <Link href="/dashboard/catalog" className="text-sm text-text-medium hover:text-primary">
+            Catalog
+          </Link>
         </nav>
         <button onClick={handleLogout} className="text-sm text-text-medium hover:text-error">
           Log out

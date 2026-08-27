@@ -1,23 +1,18 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
-import { RolesGuard } from "../../common/guards/roles.guard";
-import { Roles } from "../../common/decorators/roles.decorator";
-import { CurrentStaff, type AuthenticatedStaff } from "../../common/decorators/current-staff.decorator";
+import { Controller, Get } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
+import { CatalogService } from "./catalog.service";
 
-/**
- * Reference implementation of a role-gated route (Phase 0 done-criteria:
- * "a staff user logs in with MFA and hits a role-gated route"). Real
- * catalog CRUD (§10) lands in Phase 3 — this is the auth wiring proof.
- */
+// Public — no auth. The plan's phone-app call (§10):
+// GET /v1/catalog/products?status=published&available=true
+// (query params aren't needed here since the service method already
+// encodes exactly that filter — there's only one public view to serve.)
 @ApiTags("catalog")
-@ApiBearerAuth()
-@Controller("admin/catalog")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller("catalog")
 export class CatalogController {
-  @Get("ping")
-  @Roles("super_admin", "admin")
-  ping(@CurrentStaff() staff: AuthenticatedStaff) {
-    return { ok: true, staffId: staff.staffId, role: staff.role };
+  constructor(private readonly catalogService: CatalogService) {}
+
+  @Get("products")
+  listProducts() {
+    return this.catalogService.listPublishedProducts();
   }
 }

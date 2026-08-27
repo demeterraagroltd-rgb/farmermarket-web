@@ -16,12 +16,20 @@ export default function MarketingHome() {
         Apply for a credit limit in minutes, spend it on groceries today, and pay it back on
         payday.
       </p>
-      <Link
-        href="/apply"
-        className="rounded-md bg-primary px-6 py-3 font-semibold text-white shadow-sm hover:bg-primary-dark"
-      >
-        Apply for a credit limit
-      </Link>
+      <div className="flex gap-3">
+        <Link
+          href="/apply"
+          className="rounded-md bg-primary px-6 py-3 font-semibold text-white shadow-sm hover:bg-primary-dark"
+        >
+          Apply for a credit limit
+        </Link>
+        <Link
+          href="/marketplace"
+          className="rounded-md border border-dark-border px-6 py-3 font-semibold text-text-dark hover:bg-surface"
+        >
+          See what you can buy
+        </Link>
+      </div>
     </main>
   );
 }
