@@ -51,7 +51,9 @@ export default async function MarketingHome() {
     <main className="flex min-h-screen flex-col items-center bg-white">
       {/* Hero */}
       <div className="flex w-full flex-col items-center gap-6 px-6 py-24 text-center">
-        <Image src="/logo.png" alt="Farmer Market" width={220} height={98} priority />
+        {/* Logo is 2172x724 (3:1) — width/height must stay proportional or
+            next/image stretches it. */}
+        <Image src="/logo.png" alt="Farmer Market" width={270} height={90} priority />
         <h1 className="max-w-3xl text-4xl font-extrabold tracking-tight text-text-dark sm:text-5xl">
           Buy food now, <span className="text-gold-dark">pay later</span>
         </h1>
