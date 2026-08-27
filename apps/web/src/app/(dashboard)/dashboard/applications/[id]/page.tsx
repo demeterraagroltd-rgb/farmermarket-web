@@ -9,7 +9,6 @@ import { Card } from "../../../../../components/ui/Card";
 import { StatusBadge } from "../../../../../components/ui/Badge";
 import { Button } from "../../../../../components/ui/Button";
 import { Input, Textarea } from "../../../../../components/ui/Field";
-import { CheckIcon } from "../../../../../components/ui/icons";
 
 interface ApplicationDetail {
   id: string;
@@ -77,14 +76,16 @@ function VerificationChecklist({
           const checked = app[key];
           return (
             <label key={key} className="flex cursor-pointer items-center gap-3">
-              <span
-                onClick={() => toggle(key, !checked)}
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-                  checked ? "border-primary bg-primary text-white" : "border-dark-border/60"
-                }`}
-              >
-                {checked && <CheckIcon className="h-3.5 w-3.5" />}
-              </span>
+              {/* A real checkbox, not a styled <span onClick> — that had no
+                  accessible role at all, so it was neither keyboard-operable
+                  nor announced by a screen reader as a control, and (found
+                  while testing this live) wasn't reliably clickable either. */}
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(e) => toggle(key, e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
               <span className="text-sm text-text-dark">{label}</span>
             </label>
           );
