@@ -205,6 +205,15 @@ export default async function MarketingHome() {
               </div>
             ))}
           </div>
+
+          <div className="mt-16 overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-card)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://res.cloudinary.com/hr9pb13k/image/upload/v1787880745/Promo_image1.png"
+              alt="Farmer Market — buy food now, pay later"
+              className="h-auto w-full object-cover"
+            />
+          </div>
         </div>
       </section>
 
