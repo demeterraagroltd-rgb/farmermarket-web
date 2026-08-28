@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, EmptyState } from "../../components/ui/Card";
+import { SiteHeader } from "../../components/site/SiteHeader";
 import { formatNaira } from "../../lib/format";
 
 interface Product {
@@ -55,7 +56,9 @@ export default function MarketplacePage() {
   }, [products, activeCategory]);
 
   return (
-    <main className="min-h-screen bg-white px-6 py-16">
+    <>
+      <SiteHeader />
+      <main className="min-h-screen bg-white px-6 py-16">
       <div className="mx-auto max-w-5xl">
         <h1 className="text-3xl font-bold tracking-tight text-text-dark">What you can buy</h1>
         <p className="mt-2 text-text-medium">Every product available with a Farmer Market credit limit.</p>
@@ -114,6 +117,7 @@ export default function MarketplacePage() {
           ))}
         </div>
       </div>
-    </main>
+      </main>
+    </>
   );
 }

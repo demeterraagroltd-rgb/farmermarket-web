@@ -128,3 +128,81 @@ export function SparkleIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function TruckIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M2.5 5.5h8V14h-8V5.5Z" />
+      <path d="M10.5 8h3.2L16 10.3V14h-5.5V8Z" />
+      <circle cx="5.5" cy="15.5" r="1.5" />
+      <circle cx="13" cy="15.5" r="1.5" />
+    </svg>
+  );
+}
+
+export function ShieldIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M10 2.5 16 5v5c0 4-2.7 6.3-6 7.5C6.7 16.3 4 14 4 10V5l6-2.5Z" />
+      <path d="m7.3 10 1.9 1.9 3.5-3.9" />
+    </svg>
+  );
+}
+
+export function WalletIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h9A1.5 1.5 0 0 1 15 5.5V6H4.5A1.5 1.5 0 0 1 3 4.5v1Z" />
+      <path d="M3 6h12.5A1.5 1.5 0 0 1 17 7.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5V6Z" />
+      <circle cx="13.5" cy="11" r="1.1" />
+    </svg>
+  );
+}
+
+export function CalendarIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="2.5" y="4" width="15" height="13" rx="1.5" />
+      <path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" />
+    </svg>
+  );
+}
+
+export function LeafIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 16c-.6-6.5 3-11 12-11 0 9-4.5 12.5-11 12" />
+      <path d="M5.5 14.5 15 5" />
+    </svg>
+  );
+}
+
+export function PercentIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M15 5 5 15" />
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="14" cy="14" r="2" />
+    </svg>
+  );
+}
+
+export function BriefcaseIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="2.5" y="6" width="15" height="10" rx="1.5" />
+      <path d="M7 6V4.5A1.5 1.5 0 0 1 8.5 3h3A1.5 1.5 0 0 1 13 4.5V6" />
+      <path d="M2.5 10.5h15" />
+    </svg>
+  );
+}
+
+export function CartIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M2.5 3h2l1.6 9.6a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.2L17 7H5.3" />
+      <circle cx="8" cy="17" r="1.2" />
+      <circle cx="14.5" cy="17" r="1.2" />
+    </svg>
+  );
+}
