@@ -17,8 +17,11 @@ export const orders = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id),
     status: orderStatusEnum("status").notNull().default("placed"),
     subtotalKobo: bigint("subtotal_kobo", { mode: "bigint" }).notNull(),
-    deliveryFeeKobo: bigint("delivery_fee_kobo", { mode: "bigint" }).notNull().default(0n),
-    serviceFeeKobo: bigint("service_fee_kobo", { mode: "bigint" }).notNull().default(0n),
+    // A raw bigint literal default (0n) isn't JSON-serializable, which
+    // crashes drizzle-kit's schema snapshot diffing outright — same issue
+    // already hit and fixed in schema/credit.ts. Use a SQL default instead.
+    deliveryFeeKobo: bigint("delivery_fee_kobo", { mode: "bigint" }).notNull().default(sql`0`),
+    serviceFeeKobo: bigint("service_fee_kobo", { mode: "bigint" }).notNull().default(sql`0`),
     totalKobo: bigint("total_kobo", { mode: "bigint" }).notNull(),
     bnplPlanId: uuid("bnpl_plan_id").notNull().references(() => bnplPlans.id),
     deliveryAddress: text("delivery_address").notNull(),
@@ -56,7 +59,7 @@ export const repaymentSchedules = pgTable(
     installmentNumber: integer("installment_number").notNull(),
     totalInstallments: integer("total_installments").notNull(),
     amountKobo: bigint("amount_kobo", { mode: "bigint" }).notNull(),
-    amountPaidKobo: bigint("amount_paid_kobo", { mode: "bigint" }).notNull().default(0n),
+    amountPaidKobo: bigint("amount_paid_kobo", { mode: "bigint" }).notNull().default(sql`0`),
     dueDate: timestamp("due_date", { withTimezone: true }).notNull(),
     isPaid: boolean("is_paid").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
