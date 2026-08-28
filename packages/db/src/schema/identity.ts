@@ -1,11 +1,16 @@
 import { boolean, char, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
-// Customers — phone-OTP identity, distinct from staff (§6.1).
+// Customers — phone identity, distinct from staff (§6.1).
+// `loginCodeHash`: user-chosen 6-digit login code, set at Sign Up (argon2id).
+// `txnPinHash`: user-chosen 4-digit transaction code, set on the first
+// order/repayment and required to authorize every transaction after.
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   phone: text("phone").notNull().unique(),
   fullName: text("full_name"),
   email: text("email"),
+  loginCodeHash: text("login_code_hash"),
+  txnPinHash: text("txn_pin_hash"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

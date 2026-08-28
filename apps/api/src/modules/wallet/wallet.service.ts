@@ -12,6 +12,7 @@ import {
 } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import { LedgerService } from "../ledger/ledger.service";
+import { AuthService } from "../auth/auth.service";
 import type { PayRepaymentInput } from "./dto/pay-repayment.dto";
 
 @Injectable()
@@ -19,6 +20,7 @@ export class WalletService {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly ledger: LedgerService,
+    private readonly authService: AuthService,
   ) {}
 
   // GET /v1/credit/profile — the first customer-facing read of the row
@@ -153,6 +155,7 @@ export class WalletService {
   // money in the ledger, the same "record what happened, wire the real rail
   // in later" pattern as the rest of Phase 4.
   async payRepayment(userId: string, scheduleId: string, input: PayRepaymentInput) {
+    await this.authService.assertTxnPin(userId, input.txnPin);
     return this._recordRepayment(scheduleId, input.amountNaira, userId);
   }
 

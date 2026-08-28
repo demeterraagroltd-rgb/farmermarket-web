@@ -14,6 +14,7 @@ import {
 } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import { LedgerService } from "../ledger/ledger.service";
+import { AuthService } from "../auth/auth.service";
 import type { CreateOrderInput } from "./dto/create-order.dto";
 
 // Hardcoded to match the Flutter app's `Cart` fees exactly (§5.7) — both
@@ -29,6 +30,7 @@ export class OrdersService {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly ledger: LedgerService,
+    private readonly authService: AuthService,
   ) {}
 
   async findAllForUser(userId: string) {
@@ -104,6 +106,9 @@ export class OrdersService {
    * write with its audit trail.
    */
   async create(userId: string, input: CreateOrderInput) {
+    // Authorize the transaction before any price/limit work or writes.
+    await this.authService.assertTxnPin(userId, input.txnPin);
+
     return this.db.transaction(async (tx) => {
       const productIds = input.items.map((i) => i.productId);
       const productRows = await tx

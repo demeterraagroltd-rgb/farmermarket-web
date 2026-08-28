@@ -8,7 +8,9 @@ import { z } from "zod";
 export const createApplicationSchema = z.object({
   fullName: z.string().min(1),
   phone: z.string().min(1),
-  email: z.string().email().optional(),
+  email: z.string().email(),
+  // User-chosen 6-digit login code — this is how they'll sign in afterwards.
+  loginCode: z.string().regex(/^\d{6}$/, "Login code must be 6 digits"),
   employer: z.string().optional(),
   employmentType: z.enum(["Government", "Private"]).optional(),
   jobTitle: z.string().optional(),
@@ -26,8 +28,11 @@ export class CreateApplicationDto implements CreateApplicationInput {
   @ApiProperty()
   phone!: string;
 
-  @ApiPropertyOptional()
-  email?: string;
+  @ApiProperty()
+  email!: string;
+
+  @ApiProperty({ description: "6-digit login code the user chooses at Sign Up" })
+  loginCode!: string;
 
   @ApiPropertyOptional()
   employer?: string;

@@ -1,4 +1,11 @@
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { eq } from "drizzle-orm";
 import * as argon2 from "argon2";
@@ -78,19 +85,31 @@ export class AuthService {
     return { accessToken, refreshToken, role: account.role };
   }
 
+  /** argon2id — shared by the login-code and transaction-code setters. */
+  private hashCode(code: string): Promise<string> {
+    return argon2.hash(code, { type: argon2.argon2id });
+  }
+
   /**
-   * Phone-only login for an *existing* customer — see customer-login.dto.ts
-   * for why this doesn't create an account. `kind: 'customer'` in the JWT
-   * claim is a defense-in-depth marker: CustomerJwtAuthGuard checks it
-   * explicitly rather than relying only on "this id isn't in `staff`" to
-   * keep a customer token out of staff-only routes.
+   * Phone + 6-digit login code for an *existing* customer. `kind: 'customer'`
+   * in the JWT claim is a defense-in-depth marker: CustomerJwtAuthGuard
+   * checks it explicitly to keep a customer token off staff-only routes.
    */
   async loginCustomer(input: CustomerLoginInput) {
     const [user] = await this.db.select().from(users).where(eq(users.phone, input.phone)).limit(1);
     if (!user) {
       throw new NotFoundException(
-        "No account found for this phone number — submit an application first",
+        "No account found for this phone number — please sign up first",
       );
+    }
+    if (!user.loginCodeHash) {
+      throw new UnauthorizedException(
+        "This account has no login code — please sign up again to set one",
+      );
+    }
+    const ok = await argon2.verify(user.loginCodeHash, input.code);
+    if (!ok) {
+      throw new UnauthorizedException("Incorrect phone number or login code");
     }
 
     const accessToken = this.jwt.sign(
@@ -98,6 +117,69 @@ export class AuthService {
       { expiresIn: CUSTOMER_ACCESS_TOKEN_TTL },
     );
 
-    return { accessToken, userId: user.id, fullName: user.fullName };
+    return {
+      accessToken,
+      userId: user.id,
+      fullName: user.fullName,
+      hasTxnPin: !!user.txnPinHash,
+    };
+  }
+
+  /** Hashes and stores a Sign-Up login code onto the user row. */
+  async setLoginCode(userId: string, code: string) {
+    await this.db
+      .update(users)
+      .set({ loginCodeHash: await this.hashCode(code), updatedAt: new Date() })
+      .where(eq(users.id, userId));
+  }
+
+  async getCustomerMe(userId: string) {
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) throw new NotFoundException("Account not found");
+    return {
+      userId: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      hasTxnPin: !!user.txnPinHash,
+    };
+  }
+
+  /**
+   * Set-once: the 4-digit transaction code is created on the first
+   * transaction. Changing it later must go through a dedicated flow that
+   * verifies the current code first, not this endpoint.
+   */
+  async setTxnPin(userId: string, pin: string) {
+    const [user] = await this.db
+      .select({ txnPinHash: users.txnPinHash })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) throw new NotFoundException("Account not found");
+    if (user.txnPinHash) {
+      throw new BadRequestException("A transaction code is already set for this account");
+    }
+    await this.db
+      .update(users)
+      .set({ txnPinHash: await this.hashCode(pin), updatedAt: new Date() })
+      .where(eq(users.id, userId));
+    return { hasTxnPin: true };
+  }
+
+  /**
+   * Guards every money movement (OrdersService.create,
+   * WalletService.payRepayment). Throws `TXN_PIN_NOT_SET` verbatim so the
+   * app can tell "prompt to create one" from "wrong code".
+   */
+  async assertTxnPin(userId: string, pin: string) {
+    const [user] = await this.db
+      .select({ txnPinHash: users.txnPinHash })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user?.txnPinHash) throw new ForbiddenException("TXN_PIN_NOT_SET");
+    const ok = await argon2.verify(user.txnPinHash, pin);
+    if (!ok) throw new ForbiddenException("Incorrect transaction code");
   }
 }

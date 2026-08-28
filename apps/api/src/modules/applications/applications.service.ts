@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { asc, desc, eq } from "drizzle-orm";
+import * as argon2 from "argon2";
 import { nairaToKobo } from "@farmermarket/core";
 import {
   applications,
@@ -35,18 +36,31 @@ export class ApplicationsService {
 
   async create(input: CreateApplicationInput) {
     return this.db.transaction(async (tx) => {
-      // No phone-OTP signup yet (Termii isn't wired up), so this is the
-      // stand-in identity step: reuse a customer record by phone, or create
-      // one. Swap for real OTP-verified signup once Termii lands (§14).
+      // Sign Up is the identity step: create the customer record by phone,
+      // with the user-chosen 6-digit login code hashed onto it. If the phone
+      // already has an account, keep its existing login code (a re-submitted
+      // application must not silently reset someone's credential); only fill
+      // one in if it's missing (e.g. an imported record).
+      const loginCodeHash = await argon2.hash(input.loginCode, { type: argon2.argon2id });
       const [existingUser] = await tx.select().from(users).where(eq(users.phone, input.phone)).limit(1);
-      const user =
-        existingUser ??
-        (
-          await tx
-            .insert(users)
-            .values({ phone: input.phone, fullName: input.fullName, email: input.email })
-            .returning()
-        )[0];
+      let user = existingUser;
+      if (!user) {
+        [user] = await tx
+          .insert(users)
+          .values({
+            phone: input.phone,
+            fullName: input.fullName,
+            email: input.email,
+            loginCodeHash,
+          })
+          .returning();
+      } else if (!user.loginCodeHash) {
+        [user] = await tx
+          .update(users)
+          .set({ loginCodeHash, updatedAt: new Date() })
+          .where(eq(users.id, user.id))
+          .returning();
+      }
 
       const [row] = await tx
         .insert(applications)

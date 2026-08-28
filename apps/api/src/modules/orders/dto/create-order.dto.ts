@@ -13,6 +13,8 @@ export const createOrderSchema = z.object({
   items: z.array(createOrderItemSchema).min(1),
   deliveryAddress: z.string().min(1),
   bnplPlanId: z.string().uuid(),
+  // 4-digit transaction code — required to authorize the order.
+  txnPin: z.string().regex(/^\d{4}$/, "Transaction code must be 4 digits"),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
@@ -31,4 +33,7 @@ export class CreateOrderDto implements CreateOrderInput {
 
   @ApiProperty()
   bnplPlanId!: string;
+
+  @ApiProperty({ description: "4-digit transaction code" })
+  txnPin!: string;
 }
