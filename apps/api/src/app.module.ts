@@ -8,10 +8,13 @@ import { StaffModule } from "./modules/staff/staff.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { WalletModule } from "./modules/wallet/wallet.module";
+import { KycModule } from "./modules/kyc/kyc.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 @Module({
   imports: [
     DbModule,
+    NotificationsModule,
     HealthModule,
     AuthModule,
     CatalogModule,
@@ -20,6 +23,7 @@ import { WalletModule } from "./modules/wallet/wallet.module";
     CustomersModule,
     OrdersModule,
     WalletModule,
+    KycModule,
   ],
 })
 export class AppModule {}

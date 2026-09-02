@@ -31,8 +31,15 @@ interface Order {
 }
 
 const NGN = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" });
-const STATUSES = ["placed", "confirmed", "preparing", "on_the_way", "delivered", "cancelled"] as const;
-const STATUS_TONE: Record<string, "neutral" | "info" | "success" | "error"> = {
+// Filter chips — every state an order can be in.
+const FILTER_STATUSES = [
+  "pending_approval", "confirmed", "preparing", "on_the_way", "delivered", "rejected", "cancelled",
+] as const;
+// Transitions available once an order is already approved.
+const MOVE_STATUSES = ["preparing", "on_the_way", "delivered", "cancelled"] as const;
+const STATUS_TONE: Record<string, "neutral" | "info" | "success" | "error" | "gold"> = {
+  pending_approval: "gold",
+  rejected: "error",
   placed: "neutral",
   confirmed: "info",
   preparing: "info",
@@ -72,23 +79,29 @@ export default function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function setStatus(id: string, status: string) {
+  async function act(id: string, path: string, body: Record<string, unknown>, method = "POST") {
     setBusyId(id);
     try {
-      const res = await apiFetch(`/v1/admin/orders/${id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) {
-        const body = await res.json();
-        throw new Error(body.message ?? "Failed to update status");
-      }
+      const res = await apiFetch(`/v1/admin/orders/${id}${path}`, { method, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error((await res.json()).message ?? "Action failed");
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update status");
+      setError(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusyId(null);
     }
+  }
+
+  const setStatus = (id: string, status: string) => act(id, "/status", { status }, "PATCH");
+
+  function approve(id: string) {
+    const deliverySlot = window.prompt("Delivery date / slot to tell the buyer (optional)", "") ?? undefined;
+    act(id, "/approve", deliverySlot ? { deliverySlot } : {});
+  }
+  function reject(id: string) {
+    const reason = window.prompt("Why is this order not approved?");
+    if (!reason) return;
+    act(id, "/reject", { reason });
   }
 
   const visible = useMemo(
@@ -116,7 +129,7 @@ export default function OrdersPage() {
         >
           All ({orders?.length ?? 0})
         </button>
-        {STATUSES.map((s) => (
+        {FILTER_STATUSES.map((s) => (
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
@@ -161,18 +174,45 @@ export default function OrdersPage() {
                 ))}
               </div>
 
+              {o.estimatedDelivery && o.status !== "pending_approval" && o.status !== "rejected" && (
+                <p className="mt-2 text-xs text-text-muted">
+                  Delivery: {formatDateTime(o.estimatedDelivery)}
+                </p>
+              )}
+
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-text-muted">Move to:</span>
-                {STATUSES.filter((s) => s !== o.status).map((s) => (
-                  <button
-                    key={s}
-                    disabled={busyId === o.id}
-                    onClick={() => setStatus(o.id, s)}
-                    className="rounded-[var(--radius-sm)] border border-dark-border/60 px-2.5 py-1 text-xs font-medium capitalize text-text-medium transition-colors hover:bg-surface disabled:opacity-50"
-                  >
-                    {s.replace(/_/g, " ")}
-                  </button>
-                ))}
+                {o.status === "pending_approval" ? (
+                  <>
+                    <button
+                      disabled={busyId === o.id}
+                      onClick={() => approve(o.id)}
+                      className="rounded-[var(--radius-sm)] bg-primary px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      disabled={busyId === o.id}
+                      onClick={() => reject(o.id)}
+                      className="rounded-[var(--radius-sm)] border border-error/40 px-3 py-1 text-xs font-semibold text-error hover:bg-error/5 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  </>
+                ) : o.status === "rejected" || o.status === "delivered" || o.status === "cancelled" ? null : (
+                  <>
+                    <span className="text-xs text-text-muted">Move to:</span>
+                    {MOVE_STATUSES.filter((s) => s !== o.status).map((s) => (
+                      <button
+                        key={s}
+                        disabled={busyId === o.id}
+                        onClick={() => setStatus(o.id, s)}
+                        className="rounded-[var(--radius-sm)] border border-dark-border/60 px-2.5 py-1 text-xs font-medium capitalize text-text-medium transition-colors hover:bg-surface disabled:opacity-50"
+                      >
+                        {s.replace(/_/g, " ")}
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             </Card>
           ))}

@@ -5,12 +5,16 @@ import { z } from "zod";
 // linking, no documents — those need Mono/Termii/S3, which aren't wired up
 // yet. This is the "fake adapters first" slice (§9.2), covering only what a
 // public applicant can submit without any third-party dependency.
+// The public web `/apply` form and the mobile Sign Up both post here. `email`
+// and `loginCode` are optional at the schema level so the existing web form
+// keeps working; when `loginCode` is present it's hashed onto the user row
+// (that's how they'll sign in). The full-KYC wizard (Phase 3) always sends both.
 export const createApplicationSchema = z.object({
   fullName: z.string().min(1),
   phone: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().email().optional(),
   // User-chosen 6-digit login code — this is how they'll sign in afterwards.
-  loginCode: z.string().regex(/^\d{6}$/, "Login code must be 6 digits"),
+  loginCode: z.string().regex(/^\d{6}$/, "Login code must be 6 digits").optional(),
   employer: z.string().optional(),
   employmentType: z.enum(["Government", "Private"]).optional(),
   jobTitle: z.string().optional(),
@@ -28,11 +32,11 @@ export class CreateApplicationDto implements CreateApplicationInput {
   @ApiProperty()
   phone!: string;
 
-  @ApiProperty()
-  email!: string;
+  @ApiPropertyOptional()
+  email?: string;
 
-  @ApiProperty({ description: "6-digit login code the user chooses at Sign Up" })
-  loginCode!: string;
+  @ApiPropertyOptional({ description: "6-digit login code the user chooses at Sign Up" })
+  loginCode?: string;
 
   @ApiPropertyOptional()
   employer?: string;

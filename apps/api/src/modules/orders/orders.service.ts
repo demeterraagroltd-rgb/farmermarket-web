@@ -7,6 +7,7 @@ import {
   products,
   bnplPlans,
   creditProfiles,
+  creditLimitChanges,
   repaymentSchedules,
   users,
   type Db,
@@ -15,6 +16,9 @@ import {
 import { DB } from "../../db/db.module";
 import { LedgerService } from "../ledger/ledger.service";
 import { AuthService } from "../auth/auth.service";
+import { KycService } from "../kyc/kyc.service";
+import { EmailService } from "../notifications/email.service";
+import { emails } from "../notifications/templates";
 import type { CreateOrderInput } from "./dto/create-order.dto";
 
 // Hardcoded to match the Flutter app's `Cart` fees exactly (§5.7) — both
@@ -31,7 +35,19 @@ export class OrdersService {
     @Inject(DB) private readonly db: Db,
     private readonly ledger: LedgerService,
     private readonly authService: AuthService,
+    private readonly kyc: KycService,
+    private readonly email: EmailService,
   ) {}
+
+  private async notifyBuyer(userId: string, build: (name: string, email: string | null) => { subject: string; html: string }) {
+    const [u] = await this.db
+      .select({ fullName: users.fullName, email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!u) return;
+    void this.email.send({ to: u.email, ...build(u.fullName ?? "there", u.email) });
+  }
 
   async findAllForUser(userId: string) {
     const rows = await this.db.select().from(orders).where(eq(orders.userId, userId)).orderBy(desc(orders.placedAt));
@@ -81,7 +97,13 @@ export class OrdersService {
     );
   }
 
+  // Post-approval lifecycle only (preparing → on_the_way → delivered,
+  // cancelled). Entering `confirmed`/`rejected` goes through approve()/reject();
+  // `pending_approval` is only ever set at creation.
   async updateStatus(orderId: string, status: (typeof orders.status.enumValues)[number]) {
+    if (["pending_approval", "confirmed", "rejected"].includes(status)) {
+      throw new BadRequestException("Use the approve / reject actions for this transition");
+    }
     const [row] = await this.db
       .update(orders)
       .set({
@@ -96,26 +118,17 @@ export class OrdersService {
   }
 
   /**
-   * Places an order against the caller's own credit limit — the write that
-   * makes Phase 3's "a limit approved on web is spendable [in the app]"
-   * actually true (§15, Phase 3's done-when). Everything happens in one
-   * transaction: prices are re-read from the DB (never trust the client's
-   * numbers), the limit check is enforced before any write, and the order,
-   * its repayment schedule, and its ledger legs commit together or not at
-   * all — mirroring how ApplicationsService.decide() pairs a credit_profiles
-   * write with its audit trail.
+   * A verified buyer submits an order. It lands in `pending_approval` — no
+   * credit is debited and no repayment schedule exists yet; a staff member
+   * approves it (see {@link approve}), which is the actual credit grant.
    */
   async create(userId: string, input: CreateOrderInput) {
-    // Authorize the transaction before any price/limit work or writes.
     await this.authService.assertTxnPin(userId, input.txnPin);
+    await this.kyc.assertVerified(userId); // 403 NOT_VERIFIED otherwise
 
     return this.db.transaction(async (tx) => {
       const productIds = input.items.map((i) => i.productId);
-      const productRows = await tx
-        .select()
-        .from(products)
-        .where(inArray(products.id, productIds));
-
+      const productRows = await tx.select().from(products).where(inArray(products.id, productIds));
       const productById = new Map(productRows.map((p) => [p.id, p]));
       for (const item of input.items) {
         const product = productById.get(item.productId);
@@ -133,23 +146,17 @@ export class OrdersService {
       }, 0n);
       const totalKobo = subtotalKobo + DELIVERY_FEE_KOBO + percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT);
 
-      const [profile] = await tx.select().from(creditProfiles).where(eq(creditProfiles.userId, userId)).limit(1);
-      const available = (profile?.creditLimitKobo ?? 0n) - (profile?.usedCreditKobo ?? 0n);
-      if (!profile || available < totalKobo) {
-        throw new BadRequestException("This order exceeds your available credit limit");
-      }
-
       const [order] = await tx
         .insert(orders)
         .values({
           userId,
+          status: "pending_approval",
           subtotalKobo,
           deliveryFeeKobo: DELIVERY_FEE_KOBO,
           serviceFeeKobo: percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT),
           totalKobo,
           bnplPlanId: plan.id,
           deliveryAddress: input.deliveryAddress,
-          estimatedDeliveryAt: new Date(Date.now() + 40 * 60 * 1000),
         })
         .returning();
 
@@ -170,23 +177,102 @@ export class OrdersService {
         )
         .returning();
 
-      await tx
-        .update(creditProfiles)
-        .set({ usedCreditKobo: (profile.usedCreditKobo ?? 0n) + totalKobo, updatedAt: new Date() })
-        .where(eq(creditProfiles.userId, userId));
-
-      await this.createRepaymentSchedule(tx, order, plan, userId);
-
-      // Placing the order is the sale: the customer now owes the business
-      // `totalKobo` (Loans Receivable, an asset — money owed to us) against
-      // revenue recognized on the sale.
-      await this.ledger.post(tx, order.id, [
-        { accountName: "Loans Receivable", accountType: "asset", direction: "D", amountKobo: totalKobo, orderId: order.id },
-        { accountName: "Sales Revenue", accountType: "revenue", direction: "C", amountKobo: totalKobo, orderId: order.id },
-      ]);
-
       return this.toResponse(order, items);
     });
+  }
+
+  /**
+   * Staff approves a pending order. This is where the money moves: credit is
+   * debited (the limit is auto-extended to cover the order if needed, with an
+   * audit row — per-order approval *is* the credit decision in this flow), the
+   * repayment schedule + ledger legs are written, and a delivery slot is set.
+   * Returns the buyer id + slot so the caller can send the "approved" email.
+   */
+  async approve(orderId: string, staffId: string, deliverySlot?: string) {
+    return this.db.transaction(async (tx) => {
+      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      if (!order) throw new NotFoundException("Order not found");
+      if (order.status !== "pending_approval") {
+        throw new BadRequestException(`Order is already ${order.status}`);
+      }
+      const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
+      if (!plan) throw new BadRequestException("Order's plan no longer exists");
+
+      let [profile] = await tx.select().from(creditProfiles).where(eq(creditProfiles.userId, order.userId)).limit(1);
+      if (!profile) {
+        [profile] = await tx
+          .insert(creditProfiles)
+          .values({ userId: order.userId, isVerified: true })
+          .returning();
+      }
+      const usedKobo = profile.usedCreditKobo ?? 0n;
+      const neededLimitKobo = usedKobo + order.totalKobo;
+      if ((profile.creditLimitKobo ?? 0n) < neededLimitKobo) {
+        await tx
+          .update(creditProfiles)
+          .set({ creditLimitKobo: neededLimitKobo, updatedAt: new Date() })
+          .where(eq(creditProfiles.userId, order.userId));
+        await tx.insert(creditLimitChanges).values({
+          userId: order.userId,
+          beforeKobo: profile.creditLimitKobo ?? 0n,
+          afterKobo: neededLimitKobo,
+          reason: `Auto-extended on approval of order ${order.id}`,
+          actorStaffId: staffId,
+        });
+      }
+
+      await tx
+        .update(creditProfiles)
+        .set({ usedCreditKobo: neededLimitKobo, updatedAt: new Date() })
+        .where(eq(creditProfiles.userId, order.userId));
+
+      await this.createRepaymentSchedule(tx, order, plan, order.userId);
+
+      await this.ledger.post(tx, order.id, [
+        { accountName: "Loans Receivable", accountType: "asset", direction: "D", amountKobo: order.totalKobo, orderId: order.id },
+        { accountName: "Sales Revenue", accountType: "revenue", direction: "C", amountKobo: order.totalKobo, orderId: order.id },
+      ]);
+
+      const estimatedDeliveryAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000); // ~2 days
+      const [updated] = await tx
+        .update(orders)
+        .set({
+          status: "confirmed",
+          approvedAt: new Date(),
+          approvedByStaffId: staffId,
+          deliverySlot: deliverySlot ?? null,
+          estimatedDeliveryAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId))
+        .returning();
+
+      const response = await this.attachItems(updated);
+      await this.notifyBuyer(order.userId, (name) =>
+        emails.orderApproved(name, {
+          total: koboToNaira(order.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
+          deliverySlot: updated.deliverySlot,
+          address: order.deliveryAddress,
+        }),
+      );
+      return { ...response, userId: order.userId, deliverySlot: updated.deliverySlot };
+    });
+  }
+
+  async reject(orderId: string, staffId: string, reason: string) {
+    const [order] = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.status !== "pending_approval") {
+      throw new BadRequestException(`Order is already ${order.status}`);
+    }
+    const [updated] = await this.db
+      .update(orders)
+      .set({ status: "rejected", rejectionReason: reason, approvedByStaffId: staffId, updatedAt: new Date() })
+      .where(eq(orders.id, orderId))
+      .returning();
+    const response = await this.attachItems(updated);
+    await this.notifyBuyer(order.userId, (name) => emails.orderRejected(name, reason));
+    return { ...response, userId: order.userId };
   }
 
   private async createRepaymentSchedule(
@@ -243,6 +329,9 @@ export class OrdersService {
       placedAt: order.placedAt,
       estimatedDelivery: order.estimatedDeliveryAt,
       deliveredAt: order.deliveredAt,
+      approvedAt: order.approvedAt,
+      deliverySlot: order.deliverySlot,
+      rejectionReason: order.rejectionReason,
     };
   }
 }

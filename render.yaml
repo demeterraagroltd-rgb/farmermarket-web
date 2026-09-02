@@ -40,12 +40,17 @@ services:
           property: connectionString
       - key: CORS_ORIGINS
         value: https://farmermarket-web-api.vercel.app,http://localhost:3000
-      # Cloudinary media store for catalog images. The API has no server-side
-      # upload endpoint yet (catalog forms take an image URL), so this is
-      # declared but unused for now — set the real value in the Render
-      # dashboard (Environment tab). Format: cloudinary://<key>:<secret>@<cloud>
+      # Cloudinary — media store for catalog images AND private KYC documents
+      # (POST /v1/kyc/documents). Required now. Set the real value in the
+      # Render dashboard. Format: cloudinary://<key>:<secret>@<cloud>
       - key: CLOUDINARY_URL
         sync: false
+      # Resend — transactional email (verification + order updates). Until
+      # this is set, EmailService logs a dry-run line and nothing breaks.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: Farmer Market <noreply@farmermarket.africa>
 
   - type: redis
     name: farmermarket-redis

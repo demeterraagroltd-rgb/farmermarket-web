@@ -10,7 +10,7 @@ import { JwtService } from "@nestjs/jwt";
 import { eq } from "drizzle-orm";
 import * as argon2 from "argon2";
 import { authenticator } from "otplib";
-import { staff, mfaCredentials, sessions, users, type Db } from "@farmermarket/db";
+import { applicantProfiles, staff, mfaCredentials, sessions, users, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import type { LoginInput } from "./dto/login.dto";
 import type { CustomerLoginInput } from "./dto/customer-login.dto";
@@ -122,7 +122,17 @@ export class AuthService {
       userId: user.id,
       fullName: user.fullName,
       hasTxnPin: !!user.txnPinHash,
+      verificationStatus: await this.verificationStatusOf(user.id),
     };
+  }
+
+  private async verificationStatusOf(userId: string): Promise<string> {
+    const [p] = await this.db
+      .select({ status: applicantProfiles.verificationStatus })
+      .from(applicantProfiles)
+      .where(eq(applicantProfiles.userId, userId))
+      .limit(1);
+    return p?.status ?? "unverified";
   }
 
   /** Hashes and stores a Sign-Up login code onto the user row. */
@@ -142,6 +152,7 @@ export class AuthService {
       email: user.email,
       phone: user.phone,
       hasTxnPin: !!user.txnPinHash,
+      verificationStatus: await this.verificationStatusOf(user.id),
     };
   }
 

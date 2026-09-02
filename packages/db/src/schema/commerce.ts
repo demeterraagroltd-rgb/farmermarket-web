@@ -1,9 +1,13 @@
 import { bigint, boolean, check, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { users } from "./identity.js";
+import { users, staff } from "./identity.js";
 import { bnplPlans, products } from "./catalog.js";
 
 export const orderStatusEnum = pgEnum("order_status", [
+  // A verified buyer's order lands here first; a staff member approves it
+  // (→ confirmed, which is when credit is actually debited) or rejects it.
+  "pending_approval",
+  "rejected",
   "placed", "confirmed", "preparing", "on_the_way", "delivered", "cancelled",
 ]);
 
@@ -15,6 +19,10 @@ export const orders = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id),
+    // DB default stays "placed" (legacy); every insert path sets `status`
+    // explicitly — buyer-placed orders start "pending_approval", staff/seed
+    // paths pass their own. Changing an enum's DB default in the same
+    // migration that adds the value isn't transaction-safe in Postgres.
     status: orderStatusEnum("status").notNull().default("placed"),
     subtotalKobo: bigint("subtotal_kobo", { mode: "bigint" }).notNull(),
     // A raw bigint literal default (0n) isn't JSON-serializable, which
@@ -28,6 +36,11 @@ export const orders = pgTable(
     placedAt: timestamp("placed_at", { withTimezone: true }).notNull().defaultNow(),
     estimatedDeliveryAt: timestamp("estimated_delivery_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // Set when a staff member approves the order (status → confirmed).
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedByStaffId: uuid("approved_by_staff_id").references(() => staff.id),
+    deliverySlot: text("delivery_slot"), // human string shown to the buyer, e.g. "Tue 3 Sep, 9am–12pm"
+    rejectionReason: text("rejection_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
