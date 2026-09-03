@@ -37,9 +37,18 @@ export class CustomerJwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Not a customer token");
     }
 
-    const [row] = await this.db.select({ id: users.id }).from(users).where(eq(users.id, payload.sub)).limit(1);
+    const [row] = await this.db
+      .select({ id: users.id, deactivatedAt: users.deactivatedAt })
+      .from(users)
+      .where(eq(users.id, payload.sub))
+      .limit(1);
     if (!row) {
       throw new UnauthorizedException("Account no longer exists");
+    }
+    // Mirrors JwtAuthGuard's staff check — a deactivated customer can't ride
+    // an unexpired token.
+    if (row.deactivatedAt) {
+      throw new UnauthorizedException("Account is deactivated");
     }
 
     request.user = { userId: row.id };

@@ -107,6 +107,11 @@ export class AuthService {
         "This account has no login code — please sign up again to set one",
       );
     }
+    if (user.deactivatedAt) {
+      throw new ForbiddenException(
+        "This account has been deactivated — contact support",
+      );
+    }
     const ok = await argon2.verify(user.loginCodeHash, input.code);
     if (!ok) {
       throw new UnauthorizedException("Incorrect phone number or login code");
