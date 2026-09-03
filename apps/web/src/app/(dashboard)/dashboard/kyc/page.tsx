@@ -55,7 +55,11 @@ export default function KycQueuePage() {
       {error && <p className="text-sm text-error">{error}</p>}
 
       {rows === null ? (
-        <p className="text-sm text-text-medium">Loading…</p>
+        <div className="flex animate-pulse flex-col gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-[76px] rounded-[var(--radius-lg)] bg-dark-border/20" />
+          ))}
+        </div>
       ) : rows.length === 0 ? (
         <EmptyState label="Nobody's waiting for verification right now." />
       ) : (

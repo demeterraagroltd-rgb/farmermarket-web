@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
 import { formatNaira, formatDate } from "../../../../lib/format";
@@ -105,6 +106,7 @@ export default function CustomersPage() {
                 <th className="px-5 py-3">Credit limit</th>
                 <th className="px-5 py-3">Utilization</th>
                 <th className="px-5 py-3">Tier</th>
+                <th className="px-5 py-3">Verification</th>
                 <th className="px-5 py-3">Joined</th>
               </tr>
             </thead>
@@ -132,6 +134,17 @@ export default function CustomersPage() {
                   </td>
                   <td className="px-5 py-3">
                     {c.tier ? <Badge tone="gold">{c.tier}</Badge> : <span className="text-text-muted">—</span>}
+                  </td>
+                  <td className="px-5 py-3">
+                    {c.isVerified === true ? (
+                      <Badge tone="success">verified</Badge>
+                    ) : c.isVerified === false ? (
+                      <Link href={`/dashboard/kyc/${c.id}`} className="hover:underline">
+                        <Badge tone="gold">review</Badge>
+                      </Link>
+                    ) : (
+                      <span className="text-text-muted">—</span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-text-medium">{formatDate(c.createdAt)}</td>
                 </tr>
