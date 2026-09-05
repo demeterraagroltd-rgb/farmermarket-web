@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { getCustomerSession } from "../../lib/customer";
+import { CartLink } from "./CartLink";
 
 // Shared across the public pages (marketing, apply, marketplace, account) —
 // none of them sit under one route group, so this is a plain imported
@@ -52,29 +53,32 @@ export function SiteHeader() {
             </Link>
           )}
         </nav>
-        {signedIn ? (
-          <Link
-            href="/account"
-            className="rounded-[var(--radius-sm)] bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
-          >
-            My account
-          </Link>
-        ) : (
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <CartLink />
+          {signedIn ? (
             <Link
-              href="/account/login"
-              className="hidden text-sm font-semibold text-text-medium transition-colors hover:text-text-dark sm:inline"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/apply"
+              href="/account"
               className="rounded-[var(--radius-sm)] bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
             >
-              Apply now
+              My account
             </Link>
-          </div>
-        )}
+          ) : (
+            <>
+              <Link
+                href="/account/login"
+                className="hidden text-sm font-semibold text-text-medium transition-colors hover:text-text-dark sm:inline"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/apply"
+                className="rounded-[var(--radius-sm)] bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+              >
+                Apply now
+              </Link>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

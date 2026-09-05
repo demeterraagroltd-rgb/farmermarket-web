@@ -1,24 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, EmptyState } from "../../components/ui/Card";
 import { SiteHeader } from "../../components/site/SiteHeader";
-import { formatNaira } from "../../lib/format";
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  imageUrl: string;
-  priceKobo: string;
-  unit: string;
-  category: string;
-}
-
-interface Category {
-  id: string;
-  name: string;
-}
+import { formatNairaAmount } from "../../lib/format";
+import { effectivePrice, type Category, type Product } from "../../lib/catalog";
 
 const ALL = "__all__";
 
@@ -26,7 +13,9 @@ const ALL = "__all__";
 // pulled out as its own page for now. Reads GET /v1/catalog/products,
 // which only ever returns published + available products, plus
 // GET /v1/catalog/categories for the filter chips (§10 — hardcoded in the
-// Flutter app today, real here).
+// Flutter app today, real here). Each card leads to /marketplace/[id],
+// where the actual "add to cart" decision happens — mirrors the phone
+// app's browse → detail → add flow rather than a quick-add button here.
 export default function MarketplacePage() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -103,17 +92,40 @@ export default function MarketplacePage() {
 
         <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3">
           {visibleProducts?.map((p) => (
-            <Card key={p.id} className="overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.imageUrl} alt={p.name} className="h-40 w-full object-cover" />
-              <div className="p-4">
-                <h2 className="font-semibold text-text-dark">{p.name}</h2>
-                <span className="mt-1 inline-block rounded-[var(--radius-sm)] bg-gold/15 px-2 py-0.5 text-xs font-medium text-gold-dark">
-                  {p.unit}
-                </span>
-                <p className="mt-2 font-bold tabular-nums text-primary">{formatNaira(p.priceKobo)}</p>
-              </div>
-            </Card>
+            <Link key={p.id} href={`/marketplace/${p.id}`}>
+              <Card className="h-full overflow-hidden transition-shadow hover:shadow-[0_12px_28px_-6px_rgb(26_122_76_/_0.2)]">
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.imageUrl} alt={p.name} className="h-40 w-full object-cover" />
+                  {p.discountPrice !== null && (
+                    <span className="absolute left-2 top-2 rounded-full bg-error px-2 py-0.5 text-xs font-bold text-white">
+                      Sale
+                    </span>
+                  )}
+                  {!p.isAvailable && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-text-dark">
+                        Out of stock
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <h2 className="font-semibold text-text-dark">{p.name}</h2>
+                  <span className="mt-1 inline-block rounded-[var(--radius-sm)] bg-gold/15 px-2 py-0.5 text-xs font-medium text-gold-dark">
+                    {p.unit}
+                  </span>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <p className="font-bold tabular-nums text-primary">{formatNairaAmount(effectivePrice(p))}</p>
+                    {p.discountPrice !== null && (
+                      <p className="text-xs tabular-nums text-text-muted line-through">
+                        {formatNairaAmount(p.price)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
           ))}
         </div>
       </div>

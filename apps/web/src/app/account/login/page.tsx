@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { SiteHeader } from "../../../components/site/SiteHeader";
 import { Card } from "../../../components/ui/Card";
@@ -13,8 +13,26 @@ import { customerFetch, readError, saveCustomerSession } from "../../../lib/cust
 // POST /v1/auth/customer/login. Deliberately the same endpoint and the same
 // credential the Flutter app uses: an account created (or signed in) here is
 // signed in on the phone too, and vice versa — there is one login, not two.
+//
+// Wrapped in Suspense because it reads `?next=` via useSearchParams (Next's
+// app router requires that even for a fully client-rendered page like this
+// one) — `next` is where the cart sends someone who tries to check out
+// signed out, so signing in returns them to checkout instead of stranding
+// them on /account.
 export default function CustomerLoginPage() {
+  return (
+    <Suspense>
+      <CustomerLoginForm />
+    </Suspense>
+  );
+}
+
+function CustomerLoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
+  const destination = next && next.startsWith("/") ? next : "/account";
+
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +57,7 @@ export default function CustomerLoginPage() {
         verificationStatus: body.verificationStatus ?? "unverified",
         hasTxnPin: body.hasTxnPin === true,
       });
-      router.push("/account");
+      router.push(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed.");
     } finally {
