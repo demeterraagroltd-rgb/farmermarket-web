@@ -569,7 +569,9 @@ export default function ApplyPage() {
                 </>
               )}
 
-              {stepError && <p className="text-sm text-error">{stepError}</p>}
+              {stepError && (
+                <p className="whitespace-pre-line text-sm text-error">{stepError}</p>
+              )}
 
               <div className="mt-2 flex items-center justify-between gap-3">
                 <Button type="button" variant="ghost" onClick={goBack} disabled={loading}>
