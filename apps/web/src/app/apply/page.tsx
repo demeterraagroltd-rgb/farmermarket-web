@@ -7,7 +7,7 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input, Select } from "../../components/ui/Field";
 import { BriefcaseIcon, CartIcon, LeafIcon, CheckIcon } from "../../components/ui/icons";
-import { customerFetch, readError } from "../../lib/customer";
+import { customerFetch, readError, saveCustomerSession } from "../../lib/customer";
 
 // The full customer KYC onboarding wizard (WEB_APP_PLAN §11.3). It creates the
 // account at the "Account" step via POST /v1/auth/customer/register, then
@@ -122,6 +122,7 @@ export default function ApplyPage() {
   const [step, setStep] = useState(0); // 0 = Path; 1..TOTAL = counted steps
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [token, setToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [docs, setDocs] = useState<DocState>({});
   const [uploading, setUploading] = useState<string | null>(null);
   const [consents, setConsents] = useState({ credit: false, data: false, terms: false });
@@ -174,6 +175,7 @@ export default function ApplyPage() {
         if (!res.ok) throw new Error(await readError(res));
         const body = await res.json();
         setToken(body.accessToken as string);
+        setUserId(body.userId as string);
       } else if (step === 2) {
         if (!form.dateOfBirth) throw new Error("Your date of birth is required.");
         if (!/^\d{11}$/.test(form.bvn)) throw new Error("Enter your 11-digit BVN.");
@@ -277,6 +279,20 @@ export default function ApplyPage() {
     try {
       const res = await customerFetch("/v1/kyc/submit", token, { method: "POST" });
       if (!res.ok) throw new Error(await readError(res));
+      // The wizard already holds a live session (register() at step 1 minted
+      // it) — keep it rather than discarding it, so submitting the
+      // application signs the applicant in rather than stranding them with
+      // nowhere to check on it from this browser.
+      if (userId) {
+        saveCustomerSession({
+          token,
+          userId,
+          fullName: form.fullName.trim(),
+          phone: form.phone.trim(),
+          verificationStatus: "submitted",
+          hasTxnPin: false,
+        });
+      }
       setSubmitted(true);
     } catch (err) {
       setStepError(err instanceof Error ? err.message : "Submission failed.");
@@ -303,16 +319,24 @@ export default function ApplyPage() {
             <div className="mt-6 rounded-[var(--radius-lg)] bg-surface p-4 text-left text-sm text-text-medium">
               <p className="font-semibold text-text-dark">What happens next</p>
               <p className="mt-1">
-                Once you&apos;re verified, you manage your credit, orders and repayments in the
-                Farmer Market app — that&apos;s where everything lives from here.
+                Once you&apos;re verified, you can check out with your credit limit here or in the
+                Farmer Market app — sign in with the same phone number and login code on either.
               </p>
             </div>
-            <Link
-              href="/"
-              className="mt-6 inline-flex items-center justify-center rounded-[var(--radius-sm)] bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
-            >
-              Get the app
-            </Link>
+            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+              <Link
+                href="/account"
+                className="inline-flex items-center justify-center rounded-[var(--radius-sm)] bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+              >
+                Go to your account
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex items-center justify-center rounded-[var(--radius-sm)] border-2 border-dark-border/60 px-5 py-2.5 text-sm font-semibold text-text-medium transition-colors hover:bg-surface"
+              >
+                Get the app
+              </Link>
+            </div>
           </Card>
         </main>
       </>
