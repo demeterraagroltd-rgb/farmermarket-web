@@ -88,6 +88,16 @@ async function main() {
   );
   console.log("  users.phone_verified_at ✓");
 
+  // 0007 — Mono bank-linking columns. Applied here too so the baseline below
+  // (which marks the log current to the latest journal entry) is truthful.
+  await db.execute(
+    sql`ALTER TABLE "applicant_profiles" ADD COLUMN IF NOT EXISTS "bank_linked_at" timestamp with time zone`,
+  );
+  await db.execute(
+    sql`ALTER TABLE "applicant_profiles" ADD COLUMN IF NOT EXISTS "bank_analysis" jsonb`,
+  );
+  console.log("  applicant_profiles.bank_linked_at / bank_analysis ✓");
+
   const cols = await db.execute<{ column_name: string; data_type: string }>(
     sql`select column_name, data_type from information_schema.columns
         where table_schema = 'public' and table_name = 'phone_verifications' order by ordinal_position`,
