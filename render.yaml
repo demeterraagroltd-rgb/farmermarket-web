@@ -67,6 +67,11 @@ services:
         value: Demeterra
       - key: TERMII_CHANNEL
         value: dnd
+      # Shared secret for the daily collections run (POST /v1/collections/cron,
+      # triggered by the GitHub Actions workflow). Must match the repo secret
+      # COLLECTIONS_CRON_SECRET. Set it in the Render dashboard.
+      - key: COLLECTIONS_CRON_SECRET
+        sync: false
 
   - type: redis
     name: farmermarket-redis

@@ -1,0 +1,42 @@
+name: Daily collections run
+
+# Fires the reminder / overdue-chase pass once a day. The API endpoint is
+# idempotent-by-date (one run per day = each schedule notified once), so a
+# single daily trigger is exactly the contract it expects.
+#
+# Setup: add two repo secrets —
+#   COLLECTIONS_API_URL     e.g. https://farmermarket-api-nsjd.onrender.com
+#   COLLECTIONS_CRON_SECRET the same value set on the API's env
+on:
+  schedule:
+    - cron: "0 8 * * *" # 08:00 UTC ≈ 09:00 WAT
+  workflow_dispatch: {} # allow a manual run from the Actions tab
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /v1/collections/cron
+        env:
+          API_URL: ${{ secrets.COLLECTIONS_API_URL }}
+          CRON_SECRET: ${{ secrets.COLLECTIONS_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "COLLECTIONS_API_URL / COLLECTIONS_CRON_SECRET repo secrets are not set." >&2
+            exit 1
+          fi
+          # Render free tier can be cold — one retry after a short wait.
+          for attempt in 1 2; do
+            if curl -fsS --max-time 120 -X POST "$API_URL/v1/collections/cron" \
+                 -H "x-cron-secret: $CRON_SECRET" \
+                 -H "content-type: application/json" -d '{}' ; then
+              echo
+              echo "collections run ok (attempt $attempt)"
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying in 30s" >&2
+            sleep 30
+          done
+          echo "collections run failed after 2 attempts" >&2
+          exit 1
