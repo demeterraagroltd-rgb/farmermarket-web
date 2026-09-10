@@ -99,6 +99,16 @@ export class RegisterDto {
 
 export class UpdateKycDto extends RegisterDto {}
 
+export const linkBankSchema = z.object({
+  // The temporary authorisation code from the Mono Connect widget.
+  code: z.string().min(1),
+});
+export type LinkBankInput = z.infer<typeof linkBankSchema>;
+export class LinkBankDto implements LinkBankInput {
+  @ApiProperty({ description: "Authorisation code from the Mono Connect widget" })
+  code!: string;
+}
+
 export const uploadDocumentSchema = z.object({
   kind: z.enum(DOCUMENT_KINDS),
 });

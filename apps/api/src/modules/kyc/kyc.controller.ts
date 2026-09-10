@@ -17,6 +17,8 @@ import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/cur
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { KycService } from "./kyc.service";
 import {
+  LinkBankDto,
+  linkBankSchema,
   RegisterDto,
   registerSchema,
   UpdateKycDto,
@@ -60,6 +62,15 @@ export class KycController {
   @Post("submit")
   submit(@CurrentUser() user: AuthenticatedUser) {
     return this.kyc.submitForVerification(user.userId);
+  }
+
+  // Mono Connect widget → `code` → account link + income/statement pull.
+  @Post("link-bank")
+  linkBank(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(linkBankSchema)) body: LinkBankDto,
+  ) {
+    return this.kyc.linkBank(user.userId, body.code);
   }
 
   @Post("documents")

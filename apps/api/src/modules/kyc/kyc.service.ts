@@ -27,6 +27,8 @@ import {
 import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
 import { OtpService } from "../auth/otp.service";
+import { MONO_CLIENT, type MonoClient } from "../integrations/mono/mono.types";
+import { analyseBank } from "./bank-analysis";
 import type { RegisterInput, UpdateKycInput, ReviewDocumentInput, VerifyKycInput } from "./dto/kyc.dto";
 
 const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
@@ -52,6 +54,7 @@ export class KycService {
     private readonly jwt: JwtService,
     private readonly email: EmailService,
     private readonly otp: OtpService,
+    @Inject(MONO_CLIENT) private readonly mono: MonoClient,
   ) {}
 
   // ── Registration ────────────────────────────────────────────────────────
@@ -175,6 +178,69 @@ export class KycService {
     });
     void this.email.send({ to: profile.email, ...emails.verificationSubmitted(profile.fullName) });
     return this.getMyKyc(userId);
+  }
+
+  // ── Buyer: link a salary account (Mono Connect, §9.1) ───────────────────
+
+  /**
+   * Exchange a Connect widget `code` for a Mono account id, store it on the
+   * profile, then pull income/statement data and write the analysis. The
+   * pull runs inline (no worker yet); a Mono webhook re-runs it later if the
+   * data wasn't ready at link time.
+   */
+  async linkBank(userId: string, code: string) {
+    const profile = await this.getProfileRow(userId); // 404 if no account
+    const { accountId } = await this.mono.exchangeToken(code);
+
+    await this.db
+      .update(applicantProfiles)
+      .set({ monoAccountId: accountId, bankLinkedAt: new Date(), updatedAt: new Date() })
+      .where(eq(applicantProfiles.userId, userId));
+
+    const analysis = await this.pullAndStoreBankAnalysis(userId, accountId, profile.employer);
+    return { linked: true as const, analysisReady: analysis.source !== "unavailable", analysis };
+  }
+
+  /** Webhook path: Mono says an account's data changed — re-pull and re-store. */
+  async refreshBankAnalysisByAccount(monoAccountId: string) {
+    const [profile] = await this.db
+      .select()
+      .from(applicantProfiles)
+      .where(eq(applicantProfiles.monoAccountId, monoAccountId))
+      .limit(1);
+    if (!profile) return; // an account we don't track — ignore
+    await this.pullAndStoreBankAnalysis(profile.userId, monoAccountId, profile.employer);
+  }
+
+  private async pullAndStoreBankAnalysis(
+    userId: string,
+    accountId: string,
+    employer: string | null,
+  ) {
+    const [details, income, transactions] = await Promise.all([
+      this.mono.getAccountDetails(accountId).catch(() => null),
+      this.mono.getIncome(accountId).catch(() => null),
+      this.mono.getTransactions(accountId, 6).catch(() => [] as Awaited<ReturnType<MonoClient["getTransactions"]>>),
+    ]);
+
+    const analysis = analyseBank(income, transactions, {
+      accountName: details?.name ?? null,
+      institution: details?.institution ?? null,
+      balanceKobo: details?.balanceKobo ?? null,
+      employer,
+    });
+
+    await this.db
+      .update(applicantProfiles)
+      .set({
+        bankAnalysis: analysis,
+        bankName: details?.institution ?? undefined,
+        accountLast4: details?.accountNumberLast4 ?? undefined,
+        updatedAt: new Date(),
+      })
+      .where(eq(applicantProfiles.userId, userId));
+
+    return analysis;
   }
 
   // ── Buyer: documents ────────────────────────────────────────────────────

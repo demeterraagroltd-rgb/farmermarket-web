@@ -72,6 +72,14 @@ services:
       # COLLECTIONS_CRON_SECRET. Set it in the Render dashboard.
       - key: COLLECTIONS_CRON_SECRET
         sync: false
+      # Mono Connect — bank linking for KYC income verification. SECRET key
+      # only. MONO_WEBHOOK_SECRET must match the value in the Mono dashboard
+      # under the app's Webhooks (URL there: <api>/v1/webhooks/mono). Unset ⇒
+      # the fake client is used. Set both in the Render dashboard.
+      - key: MONO_SECRET_KEY
+        sync: false
+      - key: MONO_WEBHOOK_SECRET
+        sync: false
 
   - type: redis
     name: farmermarket-redis

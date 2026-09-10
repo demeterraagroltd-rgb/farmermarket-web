@@ -50,6 +50,13 @@
       "when": 1789060590008,
       "tag": "0006_outstanding_kylun",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789082209727,
+      "tag": "0007_faulty_electro",
+      "breakpoints": true
     }
   ]
 }

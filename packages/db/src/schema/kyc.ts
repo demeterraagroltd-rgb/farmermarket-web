@@ -59,10 +59,17 @@ export const applicantProfiles = pgTable("applicant_profiles", {
   salaryDay: smallint("salary_day"),
   yearsEmployed: text("years_employed"),
 
-  // Banking (Mono fills `monoAccountId` later — Phase 5)
+  // Banking. `monoAccountId` is set once the applicant links a salary account
+  // through Mono Connect (POST /v1/kyc/link-bank). `bankAnalysis` is the
+  // normalised summary the API computes from Mono's statement/income data —
+  // salary detection, amount, regularity, employer-name match (§9.1). Held
+  // as JSONB here rather than a `verifications` table: one applicant, one
+  // linked account, read as part of the profile in the review workspace.
   bankName: text("bank_name"),
   accountLast4: char("account_last4", { length: 4 }),
   monoAccountId: text("mono_account_id"),
+  bankLinkedAt: timestamp("bank_linked_at", { withTimezone: true }),
+  bankAnalysis: jsonb("bank_analysis"),
 
   verificationStatus: verificationStatusEnum("verification_status").notNull().default("unverified"),
   verificationNote: text("verification_note"), // reviewer -> applicant: what to fix
