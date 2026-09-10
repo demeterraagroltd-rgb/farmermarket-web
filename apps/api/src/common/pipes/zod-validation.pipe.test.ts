@@ -58,6 +58,7 @@ describe("ZodValidationPipe", () => {
       email: "not-an-email",
       loginCode: "12",
       salaryDay: 45,
+      phoneVerificationToken: "tok", // present so it isn't itself an error
     });
     expect(Object.keys(body.fieldErrors).sort()).toEqual([
       "email",

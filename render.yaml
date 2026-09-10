@@ -45,12 +45,28 @@ services:
       # Render dashboard. Format: cloudinary://<key>:<secret>@<cloud>
       - key: CLOUDINARY_URL
         sync: false
-      # Resend — transactional email (verification + order updates). Until
-      # this is set, EmailService logs a dry-run line and nothing breaks.
+      # Resend — transactional email (account, application, order, repayment
+      # and verification updates). Until this is set, EmailService logs a
+      # dry-run line and nothing breaks. EMAIL_FROM's domain must be a
+      # verified sender domain in Resend.
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
-        value: Farmer Market <noreply@farmermarket.africa>
+        value: Demeterra <noreply@demeterra.ng>
+      # Where customer replies land — a monitored inbox, not the unattended
+      # `from` address.
+      - key: EMAIL_REPLY_TO
+        value: admin@demeterra.ng
+      # Termii — SMS for Sign Up phone verification. Set the key in the Render
+      # dashboard. Until it's set the OTP endpoints still work but log the
+      # code instead of texting it, so registration can't be tested with a
+      # real phone. TERMII_SENDER_ID must be an approved sender ID.
+      - key: TERMII_API_KEY
+        sync: false
+      - key: TERMII_SENDER_ID
+        value: Demeterra
+      - key: TERMII_CHANNEL
+        value: dnd
 
   - type: redis
     name: farmermarket-redis

@@ -13,6 +13,8 @@ import {
 import { DB } from "../../db/db.module";
 import { LedgerService } from "../ledger/ledger.service";
 import { AuthService } from "../auth/auth.service";
+import { EmailService } from "../notifications/email.service";
+import { emails } from "../notifications/templates";
 import type { PayRepaymentInput } from "./dto/pay-repayment.dto";
 
 @Injectable()
@@ -21,6 +23,7 @@ export class WalletService {
     @Inject(DB) private readonly db: Db,
     private readonly ledger: LedgerService,
     private readonly authService: AuthService,
+    private readonly email: EmailService,
   ) {}
 
   // GET /v1/credit/profile — the first customer-facing read of the row
@@ -166,7 +169,7 @@ export class WalletService {
   }
 
   private async _recordRepayment(scheduleId: string, amountNaira: number, expectedUserId?: string) {
-    return this.db.transaction(async (tx) => {
+    const receipt = await this.db.transaction(async (tx) => {
       const [schedule] = await tx
         .select()
         .from(repaymentSchedules)
@@ -214,8 +217,34 @@ export class WalletService {
         { accountName: "Loans Receivable", accountType: "asset", direction: "C", amountKobo, repaymentId: repayment.id },
       ]);
 
-      return { success: true };
+      return {
+        userId,
+        amountKobo,
+        installmentNumber: schedule.installmentNumber,
+        totalInstallments: schedule.totalInstallments,
+        fullyPaid: newPaidKobo === schedule.amountKobo,
+      };
     });
+
+    // Receipt email — fire-and-forget, never blocks the repayment.
+    const [buyer] = await this.db
+      .select({ fullName: users.fullName, email: users.email })
+      .from(users)
+      .where(eq(users.id, receipt.userId))
+      .limit(1);
+    if (buyer?.email) {
+      void this.email.send({
+        to: buyer.email,
+        ...emails.repaymentReceived(buyer.fullName ?? "there", {
+          amount: koboToNaira(receipt.amountKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
+          installmentNumber: receipt.installmentNumber,
+          totalInstallments: receipt.totalInstallments,
+          fullyPaid: receipt.fullyPaid,
+        }),
+      });
+    }
+
+    return { success: true };
   }
 
   // ── Staff / dashboard: collections ───────────────────────────────────────

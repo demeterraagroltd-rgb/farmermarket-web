@@ -26,6 +26,7 @@ import {
 } from "../../common/cloudinary";
 import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
+import { OtpService } from "../auth/otp.service";
 import type { RegisterInput, UpdateKycInput, ReviewDocumentInput, VerifyKycInput } from "./dto/kyc.dto";
 
 const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
@@ -50,11 +51,16 @@ export class KycService {
     @Inject(DB) private readonly db: Db,
     private readonly jwt: JwtService,
     private readonly email: EmailService,
+    private readonly otp: OtpService,
   ) {}
 
   // ── Registration ────────────────────────────────────────────────────────
 
   async register(input: RegisterInput) {
+    // No account without a proven phone number (§9 — Termii). Throws a
+    // human 400 if the token is missing, stale, or for a different number.
+    await this.otp.assertPhoneVerified(input.phoneVerificationToken, input.phone, "register");
+
     const result = await this.db.transaction(async (tx) => {
       const [existing] = await tx.select().from(users).where(eq(users.phone, input.phone)).limit(1);
       if (existing?.loginCodeHash) {
@@ -62,16 +68,29 @@ export class KycService {
       }
 
       const loginCodeHash = await argon2.hash(input.loginCode, { type: argon2.argon2id });
+      const now = new Date();
       let user = existing;
       if (!user) {
         [user] = await tx
           .insert(users)
-          .values({ phone: input.phone, fullName: input.fullName, email: input.email, loginCodeHash })
+          .values({
+            phone: input.phone,
+            fullName: input.fullName,
+            email: input.email,
+            loginCodeHash,
+            phoneVerifiedAt: now,
+          })
           .returning();
       } else {
         [user] = await tx
           .update(users)
-          .set({ fullName: input.fullName, email: input.email, loginCodeHash, updatedAt: new Date() })
+          .set({
+            fullName: input.fullName,
+            email: input.email,
+            loginCodeHash,
+            phoneVerifiedAt: existing.phoneVerifiedAt ?? now,
+            updatedAt: now,
+          })
           .where(eq(users.id, user.id))
           .returning();
       }
@@ -90,6 +109,8 @@ export class KycService {
 
       return user;
     });
+
+    void this.email.send({ to: result.email, ...emails.welcome(result.fullName ?? "there") });
 
     const accessToken = this.jwt.sign(
       { sub: result.id, kind: "customer" },

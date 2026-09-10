@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { asc, desc, eq } from "drizzle-orm";
 import * as argon2 from "argon2";
-import { nairaToKobo } from "@farmermarket/core";
+import { formatNaira, nairaToKobo } from "@farmermarket/core";
 import {
   applications,
   applicationDecisions,
@@ -13,6 +13,9 @@ import {
   type Db,
 } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
+import { EmailService } from "../notifications/email.service";
+import { emails } from "../notifications/templates";
+import { OtpService } from "../auth/otp.service";
 import type { CreateApplicationInput } from "./dto/create-application.dto";
 import type { DecideApplicationInput } from "./dto/decide-application.dto";
 
@@ -32,10 +35,16 @@ const OUTCOME_TO_STATUS = {
 
 @Injectable()
 export class ApplicationsService {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly email: EmailService,
+    private readonly otp: OtpService,
+  ) {}
 
   async create(input: CreateApplicationInput) {
-    return this.db.transaction(async (tx) => {
+    await this.otp.assertPhoneVerified(input.phoneVerificationToken, input.phone, "register");
+
+    const { row, user, isNewUser } = await this.db.transaction(async (tx) => {
       // Sign Up is the identity step: create the customer record by phone. If
       // a 6-digit login code was supplied, hash it onto the row so the person
       // can sign in afterwards. If the phone already has an account, keep its
@@ -45,6 +54,7 @@ export class ApplicationsService {
         ? await argon2.hash(input.loginCode, { type: argon2.argon2id })
         : undefined;
       const [existingUser] = await tx.select().from(users).where(eq(users.phone, input.phone)).limit(1);
+      const isNewUser = !existingUser;
       let user = existingUser;
       if (!user) {
         [user] = await tx
@@ -87,8 +97,24 @@ export class ApplicationsService {
         })
         .returning();
 
-      return row;
+      return { row, user, isNewUser };
     });
+
+    // Account creation (only when Sign Up actually created the user here) and
+    // the application acknowledgement. Fire-and-forget — email never blocks.
+    const to = row.email ?? user.email;
+    if (isNewUser) {
+      void this.email.send({ to, ...emails.welcome(row.fullName) });
+    }
+    void this.email.send({
+      to,
+      ...emails.applicationReceived(row.fullName, {
+        reference: row.reference,
+        requestedLimit: formatNaira(row.requestedLimitKobo ?? nairaToKobo(input.requestedLimitNaira)),
+      }),
+    });
+
+    return row;
   }
 
   async findAll() {
@@ -141,7 +167,7 @@ export class ApplicationsService {
   // that actually unlocks spending. Both happen in one transaction so a
   // credit_profiles update never exists without its audit trail, or vice versa.
   async decide(applicationId: string, decidedBy: string, input: DecideApplicationInput) {
-    return this.db.transaction(async (tx) => {
+    const { decision, application, approvedLimitKobo } = await this.db.transaction(async (tx) => {
       const [application] = await tx
         .select()
         .from(applications)
@@ -226,7 +252,30 @@ export class ApplicationsService {
           .where(eq(applications.id, applicationId));
       }
 
-      return decision;
+      return { decision, application, approvedLimitKobo };
     });
+
+    // Notify the applicant of an approved / declined outcome. `referred`
+    // (→ escalated) stays silent — nothing has been decided yet.
+    const to = application.email ?? null;
+    if (input.outcome === "approved" && approvedLimitKobo !== undefined) {
+      void this.email.send({
+        to,
+        ...emails.applicationApproved(application.fullName, {
+          reference: application.reference,
+          approvedLimit: formatNaira(approvedLimitKobo),
+        }),
+      });
+    } else if (input.outcome === "declined") {
+      void this.email.send({
+        to,
+        ...emails.applicationDeclined(application.fullName, {
+          reference: application.reference,
+          note: input.notes,
+        }),
+      });
+    }
+
+    return decision;
   }
 }

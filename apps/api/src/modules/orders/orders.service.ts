@@ -126,7 +126,7 @@ export class OrdersService {
     await this.authService.assertTxnPin(userId, input.txnPin);
     await this.kyc.assertVerified(userId); // 403 NOT_VERIFIED otherwise
 
-    return this.db.transaction(async (tx) => {
+    const response = await this.db.transaction(async (tx) => {
       const productIds = input.items.map((i) => i.productId);
       const productRows = await tx.select().from(products).where(inArray(products.id, productIds));
       const productById = new Map(productRows.map((p) => [p.id, p]));
@@ -179,6 +179,17 @@ export class OrdersService {
 
       return this.toResponse(order, items);
     });
+
+    // "We've got your order" — it's in pending_approval; the approve/reject
+    // emails follow later. Fire-and-forget.
+    await this.notifyBuyer(userId, (name) =>
+      emails.orderReceived(name, {
+        total: response.total.toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
+        address: response.deliveryAddress,
+      }),
+    );
+
+    return response;
   }
 
   /**

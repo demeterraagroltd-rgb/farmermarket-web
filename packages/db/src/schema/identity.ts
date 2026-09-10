@@ -1,4 +1,15 @@
-import { boolean, char, jsonb, pgEnum, pgTable, text, timestamp, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  char,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
 
 // Customers — phone identity, distinct from staff (§6.1).
 // `loginCodeHash`: user-chosen 6-digit login code, set at Sign Up (argon2id).
@@ -15,6 +26,11 @@ export const users = pgTable("users", {
   email: text("email"),
   loginCodeHash: text("login_code_hash"),
   txnPinHash: text("txn_pin_hash"),
+  // Set when the applicant proves control of the phone via an SMS code at
+  // Sign Up (§9 — Termii). Registration refuses to create an account until
+  // this can be set, so on the `users` table it is effectively always
+  // present; nullable only so the column can be added to existing rows.
+  phoneVerifiedAt: timestamp("phone_verified_at", { withTimezone: true }),
   deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
   deactivatedReason: text("deactivated_reason"),
   deactivatedByStaffId: uuid("deactivated_by_staff_id").references((): AnyPgColumn => staff.id),
@@ -69,5 +85,23 @@ export const consents = pgTable("consents", {
   ipAddress: text("ip_address").notNull(),
   userAgent: text("user_agent").notNull(),
   metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One-time SMS codes for proving control of a phone number at Sign Up (§9 —
+// Termii). We generate and hash the code ourselves (argon2id) rather than
+// leaning on the provider's own pin store, so swapping SMS providers is a
+// one-file adapter change. A row is spent (`consumedAt`) the moment it
+// verifies; `attempts` caps brute force; `lastSentAt` throttles resends.
+// Not keyed to a user — the whole point is that no account exists yet.
+export const phoneVerifications = pgTable("phone_verifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  phone: text("phone").notNull(), // normalised E.164-ish, e.g. 2348012345678
+  purpose: text("purpose").notNull(), // 'register' today; 'login' | 'reset' later
+  codeHash: text("code_hash").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  lastSentAt: timestamp("last_sent_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
