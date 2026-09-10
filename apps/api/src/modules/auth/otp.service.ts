@@ -4,6 +4,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { and, desc, eq, isNull } from "drizzle-orm";
@@ -27,6 +28,8 @@ interface VerificationClaims {
 
 @Injectable()
 export class OtpService {
+  private readonly log = new Logger("OtpService");
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(SMS_SENDER) private readonly sms: SmsSender,
@@ -62,6 +65,25 @@ export class OtpService {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const codeHash = await argon2.hash(code, { type: argon2.argon2id });
 
+    // Text it FIRST — if the provider rejects (bad key, unapproved sender ID,
+    // DND channel not enabled), there's no point storing a code the user will
+    // never receive, and a clean 502 beats a stored row that blocks retry
+    // behind the cooldown. The fake sender never throws.
+    try {
+      await this.sms.send(
+        phone,
+        `Your Demeterra verification code is ${code}. It expires in 10 minutes. Don't share it with anyone.`,
+      );
+    } catch (err) {
+      this.log.error(
+        `SMS send failed for ${phone}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new HttpException(
+        "We couldn't send the code right now. Please try again in a moment.",
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
     // One live code per (phone, purpose): clear any unspent prior codes so a
     // stale one can't still be used. Spent rows are kept for the audit trail.
     await this.db
@@ -81,11 +103,6 @@ export class OtpService {
       expiresAt: new Date(Date.now() + CODE_TTL_MS),
       lastSentAt: new Date(),
     });
-
-    await this.sms.send(
-      phone,
-      `Your Demeterra verification code is ${code}. It expires in 10 minutes. Don't share it with anyone.`,
-    );
 
     return { sent: this.sms.live, expiresInSeconds: CODE_TTL_MS / 1000 };
   }

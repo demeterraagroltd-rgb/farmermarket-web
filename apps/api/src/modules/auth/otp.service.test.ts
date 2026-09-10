@@ -113,6 +113,21 @@ describe("OtpService", () => {
     );
   });
 
+  it("returns a clean 502 (not a 500) and stores nothing when the SMS provider fails", async () => {
+    const db = new FakeDb();
+    const jwt = new JwtService({ secret: "test-secret" });
+    const brokenSms = {
+      live: true,
+      send: () => Promise.reject(new Error("Termii: Sender Id not approved")),
+    };
+    const service = new OtpService(db as any, brokenSms as any, jwt);
+
+    await expect(service.request("08012345678", "register")).rejects.toMatchObject({
+      status: 502,
+    });
+    expect(db.rows).toHaveLength(0); // no code left behind to block a retry
+  });
+
   it("verifies a correct code and returns a token that assertPhoneVerified accepts", async () => {
     await ctx.service.request("08012345678", "register");
     const code = ctx.sms.last!.message.match(/\b(\d{6})\b/)![1];

@@ -43,19 +43,28 @@ export class TermiiSmsSender implements SmsSender {
       }),
     });
 
-    const body = (await res.json().catch(() => ({}))) as {
-      message?: string;
-      code?: string | number;
-    };
+    const raw = await res.text();
+    let body: { message?: string; code?: string | number; message_id?: string; balance?: number } = {};
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      /* non-JSON error page */
+    }
 
     // Termii answers 200 with a body for both success and some soft errors,
-    // and 4xx for auth/validation. Treat anything but an explicit "ok" as a
-    // failure so the caller surfaces "couldn't send the code" rather than a
-    // silent no-op.
-    const ok = res.ok && (body.code === "ok" || /successfully sent/i.test(body.message ?? ""));
+    // and 4xx for auth/validation. Treat anything but an explicit accepted
+    // response as a failure so the caller surfaces "couldn't send the code"
+    // rather than a silent no-op.
+    const ok =
+      res.ok &&
+      (body.code === "ok" ||
+        typeof body.message_id === "string" ||
+        /successfully sent|sent/i.test(body.message ?? ""));
     if (!ok) {
-      this.log.warn(`Termii send failed (${res.status}): ${body.message ?? "no message"}`);
-      throw new Error(body.message || `SMS provider returned ${res.status}`);
+      const detail = body.message || raw.slice(0, 300) || `HTTP ${res.status}`;
+      // ERROR level + a stable prefix so it's greppable in Render logs.
+      this.log.error(`[termii] send rejected (HTTP ${res.status}): ${detail}`);
+      throw new Error(`Termii rejected the message: ${detail}`);
     }
   }
 }
