@@ -34,12 +34,51 @@ const BUCKETS: Array<{ key: Repayment["bucket"]; label: string; tone: "success" 
   { key: "paid", label: "Paid", tone: "success" },
 ];
 
+interface CollectionNotice {
+  scheduleId: string;
+  buyerName: string | null;
+  kind: "reminder_tomorrow" | "reminder_today" | "overdue";
+  daysPastDue: number;
+  amountDue: string;
+  channels: Array<"email" | "sms">;
+}
+interface CollectionRun {
+  dryRun: boolean;
+  scannedUnpaid: number;
+  remindersDue: number;
+  overdueNotices: number;
+  emailsSent: number;
+  smsSent: number;
+  notices: CollectionNotice[];
+}
+
 export default function RepaymentsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<Repayment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bucket, setBucket] = useState<Repayment["bucket"] | "all">("all");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [collectRun, setCollectRun] = useState<CollectionRun | null>(null);
+  const [collectBusy, setCollectBusy] = useState(false);
+
+  async function runCollections(dryRun: boolean) {
+    setCollectBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/v1/admin/collections/run", {
+        method: "POST",
+        body: JSON.stringify({ dryRun }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message ?? "Collections run failed");
+      setCollectRun(body);
+      if (!dryRun) load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Collections run failed");
+    } finally {
+      setCollectBusy(false);
+    }
+  }
 
   function load() {
     apiFetch("/v1/admin/repayments")
@@ -97,8 +136,76 @@ export default function RepaymentsPage() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <PageHeader title="Repayments" description="Every installment across all customers, aged by how far past due it is." />
+      <PageHeader
+        title="Repayments"
+        description="Every installment across all customers, aged by how far past due it is."
+        action={
+          <button
+            onClick={() => runCollections(true)}
+            disabled={collectBusy}
+            className="rounded-[var(--radius-sm)] border border-dark-border/60 px-3 py-2 text-sm font-semibold text-text-medium transition-colors hover:bg-surface disabled:opacity-50"
+          >
+            {collectBusy ? "Working…" : "Run reminders"}
+          </button>
+        }
+      />
       {error && <p className="text-sm text-error">{error}</p>}
+
+      {collectRun && (
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-text-dark">
+                {collectRun.dryRun ? "Preview — nothing sent yet" : "Sent"}
+              </p>
+              <p className="mt-1 text-sm text-text-medium">
+                Scanned {collectRun.scannedUnpaid} unpaid installment
+                {collectRun.scannedUnpaid === 1 ? "" : "s"} · {collectRun.remindersDue} due-date reminder
+                {collectRun.remindersDue === 1 ? "" : "s"} · {collectRun.overdueNotices} overdue notice
+                {collectRun.overdueNotices === 1 ? "" : "s"}
+                {!collectRun.dryRun &&
+                  ` · ${collectRun.emailsSent} email${collectRun.emailsSent === 1 ? "" : "s"}, ${collectRun.smsSent} SMS`}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              {collectRun.dryRun && collectRun.notices.length > 0 && (
+                <button
+                  onClick={() => runCollections(false)}
+                  disabled={collectBusy}
+                  className="rounded-[var(--radius-sm)] bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+                >
+                  Send {collectRun.notices.length} now
+                </button>
+              )}
+              <button
+                onClick={() => setCollectRun(null)}
+                className="rounded-[var(--radius-sm)] border border-dark-border/60 px-3 py-1.5 text-xs font-semibold text-text-medium hover:bg-surface"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          {collectRun.notices.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-1 border-t border-dark-border/40 pt-3 text-xs text-text-medium">
+              {collectRun.notices.slice(0, 12).map((n) => (
+                <li key={n.scheduleId} className="flex items-center justify-between gap-3">
+                  <span>
+                    <span className="font-medium text-text-dark">{n.buyerName ?? "—"}</span>{" "}
+                    {n.kind === "overdue" ? `${n.daysPastDue}d overdue` : n.kind === "reminder_today" ? "due today" : "due tomorrow"}{" "}
+                    · {n.amountDue}
+                  </span>
+                  <span className="tabular-nums text-text-muted">
+                    {n.channels.length ? n.channels.join(" + ") : "no contact on file"}
+                  </span>
+                </li>
+              ))}
+              {collectRun.notices.length > 12 && (
+                <li className="text-text-muted">+ {collectRun.notices.length - 12} more</li>
+              )}
+            </ul>
+          )}
+        </Card>
+      )}
 
       <div className="grid grid-cols-5 gap-3">
         {BUCKETS.map((b) => (

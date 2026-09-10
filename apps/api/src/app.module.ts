@@ -9,6 +9,7 @@ import { CustomersModule } from "./modules/customers/customers.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { WalletModule } from "./modules/wallet/wallet.module";
 import { KycModule } from "./modules/kyc/kyc.module";
+import { CollectionsModule } from "./modules/collections/collections.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 @Module({
@@ -24,6 +25,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     OrdersModule,
     WalletModule,
     KycModule,
+    CollectionsModule,
   ],
 })
 export class AppModule {}

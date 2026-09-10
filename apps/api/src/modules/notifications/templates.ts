@@ -64,6 +64,45 @@ export const emails = {
         `<p>${opts.fullyPaid ? "This installment is now fully paid. Thank you!" : "Thanks — it's been applied to your balance."}</p>`,
     ),
   }),
+  repaymentReminder: (
+    name: string,
+    opts: {
+      amount: string;
+      dueLabel: string; // "tomorrow" | "today"
+      dueDate: string; // "12 Sep 2026"
+      installmentNumber: number;
+      totalInstallments: number;
+    },
+  ) => ({
+    subject: `Reminder: ${opts.amount} due ${opts.dueLabel}`,
+    html: wrap(
+      `<p>Hi ${name},</p><p>A quick reminder that installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
+        ` — <strong>${opts.amount}</strong> — is due <strong>${opts.dueLabel}</strong> (${opts.dueDate}).</p>` +
+        `<p>Open the Demeterra app to pay. If you've already paid, thank you — you can ignore this.</p>`,
+    ),
+  }),
+  repaymentOverdue: (
+    name: string,
+    opts: {
+      amount: string;
+      daysPastDue: number;
+      installmentNumber: number;
+      totalInstallments: number;
+      severe: boolean; // 30+ days — a different call to action
+    },
+  ) => ({
+    subject:
+      opts.daysPastDue >= 30
+        ? `Your account needs attention — ${opts.amount} overdue`
+        : `${opts.amount} is now overdue`,
+    html: wrap(
+      `<p>Hi ${name},</p><p>Installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
+        ` — <strong>${opts.amount}</strong> — is <strong>${opts.daysPastDue} ${opts.daysPastDue === 1 ? "day" : "days"} overdue</strong>.</p>` +
+        (opts.severe
+          ? `<p>Please reply to this email or contact us so we can work out a plan. Continued non-payment affects your credit standing and future limit.</p>`
+          : `<p>Please pay in the Demeterra app as soon as you can to keep your account in good standing.</p>`),
+    ),
+  }),
 
   // ── Verification ─────────────────────────────────────────────────────
   verificationSubmitted: (name: string) => ({
