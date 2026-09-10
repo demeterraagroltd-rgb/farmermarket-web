@@ -53,6 +53,57 @@ function Field({ label, value }: { label: string; value: unknown }) {
   );
 }
 
+interface BankAnalysis {
+  salaryDetected: boolean;
+  estimatedMonthlyIncomeKobo: number | null;
+  incomeConfidence: "high" | "medium" | "low" | null;
+  salaryRegularity: "regular" | "partial" | "irregular" | null;
+  employerNameMatch: boolean | null;
+  monthsAnalysed: number;
+  accountName: string | null;
+  institution: string | null;
+  balanceKobo: number | null;
+  source: "income_api" | "statement" | "unavailable";
+  pulledAt: string;
+}
+
+// The Mono bank-linking result (§9.1). Written by POST /v1/kyc/link-bank;
+// null until the applicant links a salary account in the wizard.
+function BankAnalysisView({
+  analysis,
+  linkedAt,
+}: {
+  analysis: unknown;
+  linkedAt: string | null | undefined;
+}) {
+  if (!analysis || typeof analysis !== "object") {
+    return <p className="py-1 text-sm text-text-muted">No account linked.</p>;
+  }
+  const a = analysis as BankAnalysis;
+  const naira = (kobo: number | null) =>
+    kobo == null ? "—" : `₦${Math.round(kobo / 100).toLocaleString()}`;
+
+  return (
+    <div className="mt-1 rounded-[var(--radius-sm)] border border-dark-border/60 p-3 text-sm">
+      <div className="mb-1.5 flex items-center gap-2">
+        <Badge tone={a.salaryDetected ? "success" : "neutral"}>
+          {a.salaryDetected ? "Salary detected" : "No clear salary"}
+        </Badge>
+        {a.employerNameMatch === true && <Badge tone="success">Employer matches</Badge>}
+        {a.employerNameMatch === false && <Badge tone="error">Employer mismatch</Badge>}
+      </div>
+      <Field label="Est. monthly" value={naira(a.estimatedMonthlyIncomeKobo)} />
+      <Field label="Regularity" value={a.salaryRegularity ?? "—"} />
+      <Field label="Confidence" value={a.incomeConfidence ?? "—"} />
+      <Field label="Bank" value={a.institution ?? "—"} />
+      <Field label="Balance" value={naira(a.balanceKobo)} />
+      <Field label="Months seen" value={a.monthsAnalysed || "—"} />
+      <Field label="Source" value={a.source === "income_api" ? "Mono income" : a.source === "statement" ? "Statement" : "—"} />
+      {linkedAt && <Field label="Linked" value={new Date(linkedAt).toLocaleDateString()} />}
+    </div>
+  );
+}
+
 function Skeleton() {
   return (
     <div className="mx-auto flex max-w-6xl animate-pulse flex-col gap-6">
@@ -192,6 +243,11 @@ export default function KycDetailPage() {
             <Field label="Employer" value={p.employer} />
             <Field label="Job title" value={p.jobTitle} />
             <Field label="Requested" value={p.requestedLimitNaira ? `₦${p.requestedLimitNaira}` : "—"} />
+            <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Bank verification</h3>
+            <BankAnalysisView
+              analysis={(p as Record<string, unknown>).bankAnalysis}
+              linkedAt={(p as Record<string, unknown>).bankLinkedAt as string | null | undefined}
+            />
             <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Next of kin</h3>
             <Field label="Name" value={nok.name} />
             <Field label="Relationship" value={nok.relationship} />
