@@ -95,6 +95,39 @@ async function main() {
   console.log("\nphone_verifications now has:");
   for (const c of cols) console.log(`  ${c.column_name} : ${c.data_type}`);
 
+  // Baseline the drizzle log so migrate-on-boot doesn't re-run 0006 (the DDL
+  // above was applied by hand, outside drizzle-kit). drizzle only inspects
+  // the single most-recent `created_at`, so a row for 0006's `when` makes it
+  // treat 0006 (and everything earlier) as done.
+  const { createHash } = await import("node:crypto");
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const journal = JSON.parse(
+    readFileSync(join(process.cwd(), "packages/db/migrations/meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ tag: string; when: number }> };
+  const latest = journal.entries[journal.entries.length - 1];
+  const sqlText = readFileSync(
+    join(process.cwd(), "packages/db/migrations", `${latest.tag}.sql`),
+    "utf8",
+  );
+  const hash = createHash("sha256").update(sqlText).digest("hex");
+  await db.execute(
+    sql`CREATE SCHEMA IF NOT EXISTS drizzle`,
+  );
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+      id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint
+    )
+  `);
+  await db.execute(sql`
+    INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+    SELECT ${hash}, ${latest.when}
+    WHERE NOT EXISTS (
+      SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at >= ${latest.when}
+    )
+  `);
+  console.log(`  drizzle log baselined to ${latest.tag}`);
+
   console.log("\nDone — re-test POST /v1/auth/customer/otp/request.");
   process.exit(0);
 }

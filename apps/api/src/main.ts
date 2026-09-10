@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { runMigrations } from "@farmermarket/db";
 import { AppModule } from "./app.module";
 
 // Money is bigint kobo throughout the schema (§5, §16), but JSON.stringify
@@ -11,6 +12,23 @@ import { AppModule } from "./app.module";
 };
 
 async function bootstrap() {
+  // Apply pending migrations before the app serves a request. A failure here
+  // is fatal on purpose: better a deploy that fails visibly (and leaves the
+  // previous version running) than new code against a stale schema — which
+  // is exactly how the phone_verifications table went missing. Opt out with
+  // RUN_MIGRATIONS_ON_BOOT=false to run them out-of-band instead.
+  if (process.env.DATABASE_URL && process.env.RUN_MIGRATIONS_ON_BOOT !== "false") {
+    try {
+      await runMigrations(process.env.DATABASE_URL);
+      // eslint-disable-next-line no-console
+      console.log("[migrate] schema up to date");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[migrate] FAILED — refusing to start:", err);
+      process.exit(1);
+    }
+  }
+
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix("v1", { exclude: ["health"] });
 
