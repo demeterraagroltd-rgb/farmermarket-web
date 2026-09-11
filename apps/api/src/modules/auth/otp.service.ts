@@ -109,6 +109,11 @@ export class OtpService {
       // "we tried and the provider refused" — the client wording differs.
       deliveryFailed: this.sms.live && !delivered,
       expiresInSeconds: CODE_TTL_MS / 1000,
+      // Explicit opt-in only, and never when a real SMS actually went out:
+      // returns the code in the response so a wizard can be walked end to
+      // end before an SMS sender is configured. Set OTP_DEV_ECHO=1 while
+      // testing, then remove it.
+      ...(process.env.OTP_DEV_ECHO === "1" && !delivered ? { devCode: code } : {}),
     };
   }
 

@@ -176,7 +176,11 @@ export default function ApplyPage() {
       const body = await res.json();
       setOtpStage("sent");
       setResendIn(60);
-      if (body.deliveryFailed) {
+      if (body.devCode) {
+        // OTP_DEV_ECHO is on — prefill it so the wizard can be walked.
+        setOtpCode(String(body.devCode));
+        setOtpError(`Dev mode: code ${body.devCode} filled in for you.`);
+      } else if (body.deliveryFailed) {
         setOtpError("We're having trouble texting the code right now — it may still arrive. If not, contact support.");
       } else if (body.sent === false) {
         setOtpError("SMS isn't configured on this environment — the code is in the server log.");
