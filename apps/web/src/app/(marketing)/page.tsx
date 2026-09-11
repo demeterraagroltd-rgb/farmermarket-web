@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { FaqAccordion } from "../../components/site/FaqAccordion";
+import { RepaymentCalculator } from "../../components/site/RepaymentCalculator";
 import {
   BriefcaseIcon,
   CalendarIcon,
@@ -265,6 +266,11 @@ export default async function MarketingHome() {
             <h2 className="text-center text-3xl font-bold tracking-tight text-text-dark sm:text-4xl">
               Pick a plan that fits your payday
             </h2>
+
+            <div className="mt-10">
+              <RepaymentCalculator plans={plans} />
+            </div>
+
             <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {plans.map((plan, i) => {
                 const Icon = PLAN_ICONS[i % PLAN_ICONS.length];
