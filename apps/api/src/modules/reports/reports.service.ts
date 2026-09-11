@@ -24,8 +24,16 @@ export class ReportsService {
 
   async overview() {
     const now = new Date();
-    const since30 = new Date(now.getTime() - 30 * DAY_MS);
-    const par30Cutoff = new Date(now.getTime() - 30 * DAY_MS);
+    // ISO strings, not Date objects: postgres.js only knows how to bind a
+    // raw Date when it's compared directly against a typed drizzle column
+    // (eq(table.col, date) etc.) — inside any `sql` template, or on the
+    // right of a comparison whose left side is itself a `sql` fragment (as
+    // every query below needs, since they all wrap the column in coalesce()
+    // or reference it across a join), a bare Date fails to bind at all
+    // ("argument must be of type string ... Received an instance of Date").
+    // An ISO string always binds cleanly and Postgres casts it implicitly.
+    const since30 = new Date(now.getTime() - 30 * DAY_MS).toISOString();
+    const par30Cutoff = new Date(now.getTime() - 30 * DAY_MS).toISOString();
 
     const [applicationsByDay, decisions, decisionSpeed, queue, totalApplicants, portfolio, activeLimits] =
       await Promise.all([
@@ -76,7 +84,7 @@ export class ReportsService {
         n: sql<number>`count(*)::int`,
       })
       .from(applicantProfiles)
-      .where(gte(sql`coalesce(${applicantProfiles.submittedAt}, ${applicantProfiles.createdAt})`, start))
+      .where(gte(sql`coalesce(${applicantProfiles.submittedAt}, ${applicantProfiles.createdAt})`, start.toISOString()))
       .groupBy(sql`1`);
 
     const byDay = new Map(rows.map((r) => [r.day, r.n]));
@@ -94,7 +102,7 @@ export class ReportsService {
   // A "decision" is a kyc_events row landing on verified or needs_more_info
   // — the KYC flow's two outcomes (there's no separate decline; needs_more_info
   // is "send it back," not final). approved = verified.
-  private async decisions(since: Date) {
+  private async decisions(since: string) {
     const [row] = await this.db
       .select({
         total: sql<number>`count(*)::int`,
@@ -111,7 +119,7 @@ export class ReportsService {
   // for the same applicant and diff the timestamps — accurate across
   // resubmissions, unlike comparing against applicant_profiles.submittedAt
   // directly (that column gets overwritten on every resubmit).
-  private async decisionSpeedHours(since: Date): Promise<number | null> {
+  private async decisionSpeedHours(since: string): Promise<number | null> {
     const [row] = await this.db.execute<{ hours: number | null }>(sql`
       select avg(extract(epoch from (e.created_at - sub.submitted_at)) / 3600.0) as hours
       from kyc_events e
@@ -126,7 +134,7 @@ export class ReportsService {
     return hours == null ? null : Math.round(Number(hours) * 10) / 10;
   }
 
-  private async portfolio(par30Cutoff: Date) {
+  private async portfolio(par30Cutoff: string) {
     const [outstanding] = await this.db
       .select({
         outstandingKobo: sql<string>`coalesce(sum(${repaymentSchedules.amountKobo} - ${repaymentSchedules.amountPaidKobo}), 0)`,
