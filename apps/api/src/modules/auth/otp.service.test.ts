@@ -113,7 +113,7 @@ describe("OtpService", () => {
     );
   });
 
-  it("returns a clean 502 (not a 500) and stores nothing when the SMS provider fails", async () => {
+  it("still stores the code (recoverable from the log) when the SMS provider fails", async () => {
     const db = new FakeDb();
     const jwt = new JwtService({ secret: "test-secret" });
     const brokenSms = {
@@ -122,10 +122,12 @@ describe("OtpService", () => {
     };
     const service = new OtpService(db as any, brokenSms as any, jwt);
 
-    await expect(service.request("08012345678", "register")).rejects.toMatchObject({
-      status: 502,
-    });
-    expect(db.rows).toHaveLength(0); // no code left behind to block a retry
+    const res = await service.request("08012345678", "register");
+    expect(res.sent).toBe(false);
+    expect(res.deliveryFailed).toBe(true);
+    // The code is still stored so a stuck Sign Up is recoverable, and
+    // verify() will accept it.
+    expect(db.rows).toHaveLength(1);
   });
 
   it("verifies a correct code and returns a token that assertPhoneVerified accepts", async () => {

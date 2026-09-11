@@ -65,22 +65,21 @@ export class OtpService {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const codeHash = await argon2.hash(code, { type: argon2.argon2id });
 
-    // Text it FIRST — if the provider rejects (bad key, unapproved sender ID,
-    // DND channel not enabled), there's no point storing a code the user will
-    // never receive, and a clean 502 beats a stored row that blocks retry
-    // behind the cooldown. The fake sender never throws.
+    // Try to text it. A provider rejection (bad key, unapproved sender ID,
+    // DND channel off) is logged loudly *with the code* so a stuck Sign Up
+    // is still recoverable from the server log — but it doesn't hard-fail
+    // the request. The client is told `sent: false` and shows a "we may be
+    // having trouble texting it" note; the fake sender never throws.
+    let delivered = this.sms.live;
     try {
       await this.sms.send(
         phone,
         `Your Demeterra verification code is ${code}. It expires in 10 minutes. Don't share it with anyone.`,
       );
     } catch (err) {
+      delivered = false;
       this.log.error(
-        `SMS send failed for ${phone}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new HttpException(
-        "We couldn't send the code right now. Please try again in a moment.",
-        HttpStatus.BAD_GATEWAY,
+        `SMS send failed for ${phone} — code ${code} not delivered: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -104,7 +103,13 @@ export class OtpService {
       lastSentAt: new Date(),
     });
 
-    return { sent: this.sms.live, expiresInSeconds: CODE_TTL_MS / 1000 };
+    return {
+      sent: delivered,
+      // Distinguishes "we deliberately didn't send" (dev/dry-run) from
+      // "we tried and the provider refused" — the client wording differs.
+      deliveryFailed: this.sms.live && !delivered,
+      expiresInSeconds: CODE_TTL_MS / 1000,
+    };
   }
 
   /**

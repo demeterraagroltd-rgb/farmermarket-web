@@ -176,8 +176,10 @@ export default function ApplyPage() {
       const body = await res.json();
       setOtpStage("sent");
       setResendIn(60);
-      if (body.sent === false) {
-        setOtpError("SMS isn't configured on this environment — check the server log for the code.");
+      if (body.deliveryFailed) {
+        setOtpError("We're having trouble texting the code right now — it may still arrive. If not, contact support.");
+      } else if (body.sent === false) {
+        setOtpError("SMS isn't configured on this environment — the code is in the server log.");
       }
     } catch (err) {
       setOtpError(err instanceof Error ? err.message : "Couldn't send the code.");
