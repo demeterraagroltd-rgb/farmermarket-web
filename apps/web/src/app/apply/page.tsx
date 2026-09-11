@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input, Select } from "../../components/ui/Field";
 import { BriefcaseIcon, CartIcon, LeafIcon, CheckIcon } from "../../components/ui/icons";
-import { customerFetch, readError, saveCustomerSession } from "../../lib/customer";
+import { customerFetch, getCustomerSession, readError, saveCustomerSession } from "../../lib/customer";
+
+// The wizard is long and part of it is filled before the account exists —
+// a refresh or a closed tab shouldn't cost that work. We snapshot the typed
+// answers + which step they're on to localStorage; the bearer token comes
+// back from the persisted customer session (saved at the account step).
+const DRAFT_KEY = "farmermarket_apply_draft";
 import { MonoConnectButton, type BankAnalysis } from "../../components/site/MonoConnectButton";
 
 // The full customer KYC onboarding wizard (WEB_APP_PLAN §11.3). It creates the
@@ -132,6 +138,61 @@ export default function ApplyPage() {
   const [submitted, setSubmitted] = useState(false);
 
   const [bankLinked, setBankLinked] = useState<BankAnalysis | null>(null);
+  const [resumable, setResumable] = useState<{ form: FormState; step: number; userId: string | null } | null>(null);
+  const hydrated = useRef(false);
+
+  // On first load, look for a saved draft. If one exists we don't jump
+  // straight back in — a small banner offers Resume / Start over.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw) as { form: FormState; step: number; userId: string | null };
+      if (d?.form && typeof d.step === "number" && d.step > 0) setResumable(d);
+    } catch {
+      /* ignore a corrupt draft */
+    }
+  }, []);
+
+  // Snapshot the draft on every change once the wizard is past the path screen.
+  useEffect(() => {
+    if (!hydrated.current && step === 0) return;
+    hydrated.current = true;
+    if (submitted) return;
+    try {
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, step, userId }));
+    } catch {
+      /* storage full / disabled — non-fatal */
+    }
+  }, [form, step, userId, submitted]);
+
+  function clearDraft() {
+    try {
+      window.localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function resumeDraft() {
+    if (!resumable) return;
+    setForm(resumable.form);
+    setUserId(resumable.userId);
+    // The account step persists the customer session; pick the token back up.
+    const session = getCustomerSession();
+    if (resumable.step >= 2 && session?.token) {
+      setToken(session.token);
+      setStep(resumable.step);
+    } else if (resumable.step >= 2 && !session?.token) {
+      // Details were saved but the session is gone (different browser, cleared
+      // storage). Log back in with the saved phone + login code at step 1.
+      setStep(1);
+      setStepError("Welcome back — your details are saved. Confirm your login code to continue.");
+    } else {
+      setStep(resumable.step);
+    }
+    setResumable(null);
+  }
 
   function update(field: keyof FormState, value: string) {
     setForm((p) => ({ ...p, [field]: value }));
@@ -175,10 +236,36 @@ export default function ApplyPage() {
             employmentType: form.employmentType || undefined,
           }),
         });
-        if (!res.ok) throw new Error(await readError(res));
-        const body = await res.json();
-        setToken(body.accessToken as string);
-        setUserId(body.userId as string);
+        let body: { accessToken: string; userId: string };
+        if (res.ok) {
+          body = await res.json();
+        } else {
+          const msg = await readError(res);
+          // Resuming a saved draft whose account was already created — sign
+          // back in with the same phone + login code rather than dead-ending.
+          if (/already exists/i.test(msg)) {
+            const login = await customerFetch("/v1/auth/customer/login", "", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ phone: form.phone.trim(), code: form.loginCode }),
+            });
+            if (!login.ok) throw new Error(await readError(login));
+            body = await login.json();
+          } else {
+            throw new Error(msg);
+          }
+        }
+        setToken(body.accessToken);
+        setUserId(body.userId);
+        // Persist the session now so a refresh mid-wizard keeps the token.
+        saveCustomerSession({
+          token: body.accessToken,
+          userId: body.userId,
+          fullName: form.fullName.trim(),
+          phone: form.phone.trim(),
+          verificationStatus: "unverified",
+          hasTxnPin: false,
+        });
       } else if (step === 2) {
         if (!form.dateOfBirth) throw new Error("Your date of birth is required.");
         if (!/^\d{11}$/.test(form.bvn)) throw new Error("Enter your 11-digit BVN.");
@@ -282,10 +369,8 @@ export default function ApplyPage() {
     try {
       const res = await customerFetch("/v1/kyc/submit", token, { method: "POST" });
       if (!res.ok) throw new Error(await readError(res));
-      // The wizard already holds a live session (register() at step 1 minted
-      // it) — keep it rather than discarding it, so submitting the
-      // application signs the applicant in rather than stranding them with
-      // nowhere to check on it from this browser.
+      // The wizard already holds a live session (persisted at the account
+      // step) — bump its status so /account reflects the submission.
       if (userId) {
         saveCustomerSession({
           token,
@@ -296,6 +381,7 @@ export default function ApplyPage() {
           hasTxnPin: false,
         });
       }
+      clearDraft();
       setSubmitted(true);
     } catch (err) {
       setStepError(err instanceof Error ? err.message : "Submission failed.");
@@ -347,11 +433,35 @@ export default function ApplyPage() {
   }
 
   // ---- step 0: path choice -------------------------------------------
+  const resumeBanner = resumable && (
+    <div className="mx-auto mb-8 flex max-w-xl flex-col gap-2 rounded-[var(--radius-lg)] border border-primary/30 bg-primary-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-text-dark">
+        You have an application in progress (step {resumable.step} of {TOTAL}).
+      </p>
+      <div className="flex shrink-0 gap-2">
+        <Button type="button" onClick={resumeDraft}>
+          Resume
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            clearDraft();
+            setResumable(null);
+          }}
+        >
+          Start over
+        </Button>
+      </div>
+    </div>
+  );
+
   if (step === 0) {
     return (
       <>
         <SiteHeader />
         <main className="min-h-screen bg-white px-6 py-16">
+          {resumeBanner}
           <div className="mx-auto max-w-2xl text-center">
             <h1 className="text-3xl font-bold tracking-tight text-text-dark">Let&apos;s get you verified</h1>
             <p className="mt-2 text-text-medium">
@@ -391,6 +501,7 @@ export default function ApplyPage() {
     <>
       <SiteHeader />
       <main className="min-h-screen bg-white px-6 py-14">
+        {resumeBanner}
         <div className="mx-auto max-w-xl">
           <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
             Step {step} of {TOTAL}

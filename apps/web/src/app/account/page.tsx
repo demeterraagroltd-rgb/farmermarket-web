@@ -93,6 +93,11 @@ const ORDER_STATUS_TONE: Record<string, "success" | "warning" | "error" | "info"
   placed: "info",
 };
 
+interface KycView {
+  verificationNote: string | null;
+  rejectedDocs: Array<{ kind: string; rejectionReason: string | null }>;
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
@@ -100,6 +105,7 @@ export default function AccountPage() {
   const [credit, setCredit] = useState<CreditProfile | null>(null);
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [repayments, setRepayments] = useState<Repayment[] | null>(null);
+  const [kyc, setKyc] = useState<KycView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -126,6 +132,23 @@ export default function AccountPage() {
           patchCustomerSession({ verificationStatus: body.verificationStatus });
           setSession((s) => (s ? { ...s, verificationStatus: body.verificationStatus } : s));
         }
+      })
+      .catch(() => {});
+
+    // The reviewer's "what to fix" note + any rejected documents.
+    accountFetch("/v1/kyc/me")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = await res.json();
+        setKyc({
+          verificationNote: body?.profile?.verificationNote ?? null,
+          rejectedDocs: (body?.documents ?? [])
+            .filter((d: { status: string }) => d.status === "rejected")
+            .map((d: { kind: string; rejectionReason: string | null }) => ({
+              kind: d.kind,
+              rejectionReason: d.rejectionReason,
+            })),
+        });
       })
       .catch(() => {});
 
@@ -184,16 +207,40 @@ export default function AccountPage() {
           </div>
 
           {/* Verification — the thing that gates everything else, so it leads. */}
-          <Card className="mt-6 flex flex-wrap items-center justify-between gap-4 p-5">
-            <div className="flex items-center gap-3">
-              <Badge tone={verification.tone}>{verification.label}</Badge>
-              <p className="text-sm text-text-medium">{verification.blurb}</p>
+          <Card className="mt-6 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Badge tone={verification.tone}>{verification.label}</Badge>
+                <p className="text-sm text-text-medium">{verification.blurb}</p>
+              </div>
+              {session.verificationStatus !== "verified" && (
+                <Button variant="secondary" onClick={() => router.push("/apply")}>
+                  Continue application
+                </Button>
+              )}
             </div>
-            {session.verificationStatus !== "verified" && (
-              <Button variant="secondary" onClick={() => router.push("/apply")}>
-                Continue application
-              </Button>
-            )}
+
+            {session.verificationStatus === "needs_more_info" && (kyc?.verificationNote || kyc?.rejectedDocs.length) ? (
+              <div className="mt-4 rounded-[var(--radius-sm)] border border-warning/40 bg-warning/10 p-3 text-sm">
+                {kyc.verificationNote && (
+                  <p className="text-text-dark">
+                    <span className="font-semibold">What to fix:</span> {kyc.verificationNote}
+                  </p>
+                )}
+                {kyc.rejectedDocs.length > 0 && (
+                  <ul className="mt-2 flex flex-col gap-1 text-text-medium">
+                    {kyc.rejectedDocs.map((d, i) => (
+                      <li key={i}>
+                        <span className="font-medium capitalize text-text-dark">
+                          {d.kind.replace(/_/g, " ")}
+                        </span>{" "}
+                        rejected{d.rejectionReason ? ` — ${d.rejectionReason}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
           </Card>
 
           {credit && (
