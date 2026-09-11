@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, getRole, getStaffEmail, type StaffRole } from "../../lib/auth";
 import { Badge } from "../../components/ui/Badge";
+import { CommandPalette } from "../../components/site/CommandPalette";
 import {
   GridIcon,
   InboxIcon,
@@ -71,6 +72,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen bg-off-white">
+      <CommandPalette nav={NAV} />
       <aside className="flex w-64 shrink-0 flex-col border-r border-dark-border/60 bg-white px-4 py-6">
         <div className="flex items-center gap-2.5 px-2">
           <Image src="/icon.png" alt="" width={32} height={32} className="rounded-[var(--radius-sm)] shadow-[var(--shadow-card)]" />
@@ -80,7 +82,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        <nav className="mt-8 flex flex-col gap-1">
+        <p className="mt-6 flex items-center justify-between rounded-[var(--radius-sm)] bg-surface px-3 py-1.5 text-[11px] text-text-muted">
+          Quick search
+          <kbd className="rounded border border-dark-border/60 bg-white px-1.5 py-0.5 font-mono text-[10px]">
+            ⌘K
+          </kbd>
+        </p>
+
+        <nav className="mt-3 flex flex-col gap-1">
           {visibleNav.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || (href !== "/dashboard" && href !== "/dashboard/overview" && pathname?.startsWith(href));
             return (
