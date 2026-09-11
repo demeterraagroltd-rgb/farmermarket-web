@@ -172,13 +172,21 @@ export class OtpService {
   }
 
   /**
-   * Called by the Sign Up flow. Throws unless `token` is a valid, unexpired
-   * proof that *this* number was verified for *this* purpose. Registration
-   * has no bypass — in dev the FakeSmsSender logs the code so a real token
-   * can still be obtained.
+   * Called by the Sign Up flow. When a token is supplied it is always
+   * validated (valid, unexpired, this number, this purpose). When it is
+   * absent the behaviour depends on `PHONE_VERIFICATION_REQUIRED`:
+   *   - "true"  → reject (the intended production posture once SMS is live)
+   *   - unset   → allow, with a warning. Temporary, while no SMS sender is
+   *               approved; flip the env var to restore enforcement.
    */
   async assertPhoneVerified(token: string | undefined, rawPhone: string, purpose: OtpPurpose) {
     if (!token) {
+      if (process.env.PHONE_VERIFICATION_REQUIRED !== "true") {
+        this.log.warn(
+          `phone verification skipped for ${normalisePhone(rawPhone)} — set PHONE_VERIFICATION_REQUIRED=true to enforce`,
+        );
+        return;
+      }
       throw new BadRequestException("Verify your phone number before creating an account.");
     }
     let claims: VerificationClaims;

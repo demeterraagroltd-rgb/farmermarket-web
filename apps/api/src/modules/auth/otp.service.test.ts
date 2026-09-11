@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { JwtService } from "@nestjs/jwt";
 import { OtpService } from "./otp.service";
 import { FakeSmsSender } from "../integrations/sms/fake.sms";
@@ -181,7 +181,21 @@ describe("OtpService", () => {
   });
 
   describe("assertPhoneVerified", () => {
-    it("throws when no token is supplied", async () => {
+    const REQ = process.env.PHONE_VERIFICATION_REQUIRED;
+    afterEach(() => {
+      if (REQ === undefined) delete process.env.PHONE_VERIFICATION_REQUIRED;
+      else process.env.PHONE_VERIFICATION_REQUIRED = REQ;
+    });
+
+    it("no-ops when no token is supplied and enforcement is off (temporary posture)", async () => {
+      delete process.env.PHONE_VERIFICATION_REQUIRED;
+      await expect(
+        ctx.service.assertPhoneVerified(undefined, "08012345678", "register"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("throws when no token is supplied and PHONE_VERIFICATION_REQUIRED=true", async () => {
+      process.env.PHONE_VERIFICATION_REQUIRED = "true";
       await expect(
         ctx.service.assertPhoneVerified(undefined, "08012345678", "register"),
       ).rejects.toThrow(/Verify your phone number/);

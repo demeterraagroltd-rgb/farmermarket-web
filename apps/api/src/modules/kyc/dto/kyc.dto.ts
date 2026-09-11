@@ -63,9 +63,10 @@ export const registerSchema = z.object({
   phone: z.string().min(6),
   email: z.string().email(),
   loginCode: z.string().regex(/^\d{6}$/, "Login code must be 6 digits"),
-  // Proof the phone was verified by SMS just now — from
-  // POST /v1/auth/customer/otp/verify. No account is created without it.
-  phoneVerificationToken: z.string().min(1),
+  // Proof the phone was verified by SMS (POST /v1/auth/customer/otp/verify).
+  // Optional at the schema level while no SMS sender is approved; enforced by
+  // KycService when PHONE_VERIFICATION_REQUIRED=true.
+  phoneVerificationToken: z.string().min(1).optional(),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
@@ -74,8 +75,8 @@ export class RegisterDto {
   @ApiProperty() phone!: string;
   @ApiProperty() email!: string;
   @ApiProperty({ description: "6-digit login code" }) loginCode!: string;
-  @ApiProperty({ description: "Token from POST /auth/customer/otp/verify" })
-  phoneVerificationToken!: string;
+  @ApiPropertyOptional({ description: "Token from POST /auth/customer/otp/verify" })
+  phoneVerificationToken?: string;
   @ApiPropertyOptional() dateOfBirth?: string;
   @ApiPropertyOptional() gender?: string;
   @ApiPropertyOptional() maritalStatus?: string;

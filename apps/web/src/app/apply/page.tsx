@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card } from "../../components/ui/Card";
@@ -131,89 +131,10 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  // Phone verification (step 1). `phoneToken` is the proof the register call
-  // needs; it's tied to the exact number that was verified, so editing the
-  // phone field clears it.
-  const [otpStage, setOtpStage] = useState<"idle" | "sent" | "verified">("idle");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpBusy, setOtpBusy] = useState(false);
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [phoneToken, setPhoneToken] = useState<string | null>(null);
-  const [resendIn, setResendIn] = useState(0);
   const [bankLinked, setBankLinked] = useState<BankAnalysis | null>(null);
-
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendIn]);
 
   function update(field: keyof FormState, value: string) {
     setForm((p) => ({ ...p, [field]: value }));
-    // Any edit to the phone invalidates a prior verification.
-    if (field === "phone") {
-      setOtpStage("idle");
-      setOtpCode("");
-      setOtpError(null);
-      setPhoneToken(null);
-    }
-  }
-
-  async function sendOtp() {
-    setOtpError(null);
-    if (!form.phone.trim()) {
-      setOtpError("Enter your phone number first.");
-      return;
-    }
-    setOtpBusy(true);
-    try {
-      const res = await customerFetch("/v1/auth/customer/otp/request", "", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: form.phone.trim(), purpose: "register" }),
-      });
-      if (!res.ok) throw new Error(await readError(res));
-      const body = await res.json();
-      setOtpStage("sent");
-      setResendIn(60);
-      if (body.devCode) {
-        // OTP_DEV_ECHO is on — prefill it so the wizard can be walked.
-        setOtpCode(String(body.devCode));
-        setOtpError(`Dev mode: code ${body.devCode} filled in for you.`);
-      } else if (body.deliveryFailed) {
-        setOtpError("We're having trouble texting the code right now — it may still arrive. If not, contact support.");
-      } else if (body.sent === false) {
-        setOtpError("SMS isn't configured on this environment — the code is in the server log.");
-      }
-    } catch (err) {
-      setOtpError(err instanceof Error ? err.message : "Couldn't send the code.");
-    } finally {
-      setOtpBusy(false);
-    }
-  }
-
-  async function verifyOtp() {
-    setOtpError(null);
-    if (!/^\d{6}$/.test(otpCode)) {
-      setOtpError("Enter the 6-digit code.");
-      return;
-    }
-    setOtpBusy(true);
-    try {
-      const res = await customerFetch("/v1/auth/customer/otp/verify", "", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: form.phone.trim(), code: otpCode, purpose: "register" }),
-      });
-      if (!res.ok) throw new Error(await readError(res));
-      const body = await res.json();
-      setPhoneToken(body.verificationToken as string);
-      setOtpStage("verified");
-    } catch (err) {
-      setOtpError(err instanceof Error ? err.message : "Couldn't verify that code.");
-    } finally {
-      setOtpBusy(false);
-    }
   }
 
   function choosePath(value: string) {
@@ -241,9 +162,6 @@ export default function ApplyPage() {
         if (!form.fullName.trim() || !form.phone.trim() || !form.email.trim()) {
           throw new Error("Full name, phone and email are required.");
         }
-        if (otpStage !== "verified" || !phoneToken) {
-          throw new Error("Verify your phone number before continuing.");
-        }
         if (!/^\d{6}$/.test(form.loginCode)) throw new Error("Your login code must be 6 digits.");
         if (form.loginCode !== form.loginCodeConfirm) throw new Error("The login codes don't match.");
         const res = await customerFetch("/v1/auth/customer/register", "", {
@@ -254,7 +172,6 @@ export default function ApplyPage() {
             phone: form.phone.trim(),
             email: form.email.trim(),
             loginCode: form.loginCode,
-            phoneVerificationToken: phoneToken,
             employmentType: form.employmentType || undefined,
           }),
         });
@@ -491,66 +408,7 @@ export default function ApplyPage() {
               {step === 1 && (
                 <>
                   <Input label="Full name" value={form.fullName} onChange={(e) => update("fullName", e.target.value)} required />
-
-                  <div>
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1">
-                        <Input
-                          label="Phone number"
-                          value={form.phone}
-                          onChange={(e) => update("phone", e.target.value)}
-                          disabled={otpStage === "verified"}
-                          required
-                        />
-                      </div>
-                      {otpStage === "verified" ? (
-                        <span className="mb-1.5 inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-primary-surface px-2.5 py-2 text-xs font-semibold text-primary">
-                          <CheckIcon className="h-3.5 w-3.5" /> Verified
-                        </span>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="mb-0.5 shrink-0"
-                          disabled={otpBusy || (otpStage === "sent" && resendIn > 0)}
-                          onClick={sendOtp}
-                        >
-                          {otpBusy && otpStage === "idle"
-                            ? "Sending…"
-                            : otpStage === "sent"
-                              ? resendIn > 0
-                                ? `Resend in ${resendIn}s`
-                                : "Resend code"
-                              : "Send code"}
-                        </Button>
-                      )}
-                    </div>
-
-                    {otpStage === "sent" && (
-                      <div className="mt-2 flex items-end gap-2">
-                        <div className="flex-1">
-                          <Input
-                            label="Enter the 6-digit code we texted you"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={otpCode}
-                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          className="mb-0.5 shrink-0"
-                          disabled={otpBusy || otpCode.length !== 6}
-                          onClick={verifyOtp}
-                        >
-                          {otpBusy ? "Checking…" : "Verify"}
-                        </Button>
-                      </div>
-                    )}
-
-                    {otpError && <p className="mt-1.5 text-xs text-error">{otpError}</p>}
-                  </div>
-
+                  <Input label="Phone number" value={form.phone} onChange={(e) => update("phone", e.target.value)} required />
                   <Input type="email" label="Email" value={form.email} onChange={(e) => update("email", e.target.value)} required />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input

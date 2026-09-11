@@ -21,10 +21,9 @@ export const createApplicationSchema = z.object({
   netMonthlySalaryNaira: z.number().positive().optional(),
   requestedLimitNaira: z.number().positive(),
   salaryDay: z.number().int().min(1).max(31).optional(),
-  // Proof the phone was SMS-verified (POST /v1/auth/customer/otp/verify).
-  // This public endpoint creates a `users` row, so no unverified caller
-  // gets to spin one up — same gate as /auth/customer/register.
-  phoneVerificationToken: z.string().min(1),
+  // Proof the phone was SMS-verified. Optional while no SMS sender is
+  // approved; enforced when PHONE_VERIFICATION_REQUIRED=true.
+  phoneVerificationToken: z.string().min(1).optional(),
 });
 
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
@@ -60,6 +59,6 @@ export class CreateApplicationDto implements CreateApplicationInput {
   @ApiPropertyOptional()
   salaryDay?: number;
 
-  @ApiProperty({ description: "Token from POST /auth/customer/otp/verify" })
-  phoneVerificationToken!: string;
+  @ApiPropertyOptional({ description: "Token from POST /auth/customer/otp/verify" })
+  phoneVerificationToken?: string;
 }
