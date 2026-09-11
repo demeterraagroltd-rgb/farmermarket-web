@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../../lib/auth";
-import { formatDateTime } from "../../../../../lib/format";
+import { formatDateTime, formatNaira } from "../../../../../lib/format";
 import { PageHeader, Card } from "../../../../../components/ui/Card";
 import { Badge } from "../../../../../components/ui/Badge";
 import { Button } from "../../../../../components/ui/Button";
@@ -24,6 +24,9 @@ interface Detail {
     verificationStatus: string;
     verificationNote: string | null;
     bvnLast4: string | null;
+    netMonthlySalaryKobo: string | null;
+    requestedLimitKobo: string | null;
+    bankAnalysis: BankAnalysis | null;
   };
   documents: Doc[];
   events: Array<{ id: string; fromStatus: string | null; toStatus: string; note: string | null; createdAt: string }>;
@@ -142,6 +145,108 @@ function BankAnalysisView({
       <Field label="Source" value={a.source === "income_api" ? "Mono income" : a.source === "statement" ? "Statement" : "—"} />
       {linkedAt && <Field label="Linked" value={new Date(linkedAt).toLocaleDateString()} />}
     </div>
+  );
+}
+
+// The consolidated read a credit officer actually decides from — every
+// signal the system can compute today, in one place, next to the Verify /
+// Send back buttons. Deliberately not a single score: each row names its own
+// source so a reviewer can tell "computed from what's on file" apart from
+// "independently verified" — BVN is neither today (§13, stored hashed;
+// bureau isn't connected), which the footnote says outright rather than
+// implying more confidence than the data supports.
+function DecisionSignals({ profile, documents }: { profile: Detail["profile"]; documents: Doc[] }) {
+  const salaryKobo = profile.netMonthlySalaryKobo ? Number(profile.netMonthlySalaryKobo) : null;
+  const requestedKobo = profile.requestedLimitKobo ? Number(profile.requestedLimitKobo) : null;
+  const ratio = salaryKobo && salaryKobo > 0 && requestedKobo ? requestedKobo / salaryKobo : null;
+  const band =
+    ratio === null
+      ? null
+      : ratio <= 0.6
+        ? { label: "Comfortable", tone: "success" as const }
+        : ratio <= 1.2
+          ? { label: "Moderate", tone: "warning" as const }
+          : { label: "High", tone: "error" as const };
+
+  const bank = profile.bankAnalysis;
+  const bankIncomeKobo = bank?.estimatedMonthlyIncomeKobo ?? null;
+  const incomeDivergence =
+    salaryKobo && salaryKobo > 0 && bankIncomeKobo != null
+      ? Math.abs(bankIncomeKobo - salaryKobo) / salaryKobo
+      : null;
+
+  const accepted = documents.filter((d) => d.status === "accepted").length;
+  const rejected = documents.filter((d) => d.status === "rejected").length;
+  const pending = documents.filter((d) => d.status === "pending").length;
+
+  return (
+    <Card className="p-5">
+      <h3 className="text-sm font-bold text-text-dark">Decision signals</h3>
+      <div className="mt-3 flex flex-col gap-3 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-text-muted">Affordability</span>
+          {ratio === null ? (
+            <span className="text-xs text-text-muted">Requested or salary missing</span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span className="font-semibold tabular-nums text-text-dark">{Math.round(ratio * 100)}%</span>
+              {band && <Badge tone={band.tone}>{band.label}</Badge>}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-text-muted">Bank-verified income</span>
+          {!bank ? (
+            <span className="text-xs text-text-muted">Not linked</span>
+          ) : bankIncomeKobo == null ? (
+            <span className="text-xs text-text-muted">No salary detected</span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span className="font-semibold tabular-nums text-text-dark">{formatNaira(bankIncomeKobo)}/mo</span>
+              {incomeDivergence != null && (
+                <Badge tone={incomeDivergence <= 0.15 ? "success" : incomeDivergence <= 0.4 ? "warning" : "error"}>
+                  {incomeDivergence <= 0.15 ? "Matches declared" : "Differs from declared"}
+                </Badge>
+              )}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-text-muted">Employer match</span>
+          {bank?.employerNameMatch == null ? (
+            <span className="text-xs text-text-muted">—</span>
+          ) : (
+            <Badge tone={bank.employerNameMatch ? "success" : "error"}>
+              {bank.employerNameMatch ? "Matches declared" : "No match"}
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-text-muted">Documents</span>
+          <span className="text-xs text-text-dark">
+            {accepted} accepted
+            {rejected > 0 && `, ${rejected} rejected`}
+            {pending > 0 && `, ${pending} pending`}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-text-muted">BVN</span>
+          <span className="text-xs text-text-dark">
+            {profile.bvnLast4 ? `On file · •••• ${profile.bvnLast4}` : "Not provided"}
+          </span>
+        </div>
+      </div>
+
+      <p className="mt-4 border-t border-dark-border/60 pt-3 text-xs text-text-muted">
+        Computed from data on file — not an automated credit score. BVN is stored hashed and
+        hasn&apos;t been independently verified against NIBSS records; bureau data isn&apos;t
+        connected yet.
+      </p>
+    </Card>
   );
 }
 
@@ -283,7 +388,8 @@ export default function KycDetailPage() {
             <Field label="Type" value={p.employmentType} />
             <Field label="Employer" value={p.employer} />
             <Field label="Job title" value={p.jobTitle} />
-            <Field label="Requested" value={p.requestedLimitNaira ? `₦${p.requestedLimitNaira}` : "—"} />
+            <Field label="Net monthly salary" value={formatNaira(p.netMonthlySalaryKobo)} />
+            <Field label="Requested limit" value={formatNaira(p.requestedLimitKobo)} />
             <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Bank verification</h3>
             <BankAnalysisView
               userId={userId}
@@ -402,7 +508,8 @@ export default function KycDetailPage() {
         </Card>
 
         {/* Right — sticky decision */}
-        <div className="xl:sticky xl:top-6 xl:self-start">
+        <div className="flex flex-col gap-6 xl:sticky xl:top-6 xl:self-start">
+          <DecisionSignals profile={p} documents={data.documents} />
           <Card className="p-6">
             <h3 className="mb-3 text-sm font-bold text-text-dark">Decision</h3>
             <Textarea

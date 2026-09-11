@@ -1,0 +1,1 @@
+ALTER TABLE "applicant_profiles" ADD COLUMN "requested_limit_kobo" bigint;

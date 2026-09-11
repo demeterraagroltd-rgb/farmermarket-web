@@ -10,33 +10,26 @@ interface NavItem {
   roles: StaffRole[];
 }
 
-interface AppRow {
-  id: string;
-  reference: string;
-  fullName: string;
-  phone: string;
-  status: string;
-}
 interface CustomerRow {
   id: string;
   fullName: string | null;
   phone: string;
+  isVerified: boolean | null;
 }
 
 type Result =
   | { kind: "nav"; label: string; sublabel: string; href: string }
-  | { kind: "application"; label: string; sublabel: string; href: string }
   | { kind: "customer"; label: string; sublabel: string; href: string };
 
 // ⌘K / Ctrl-K palette for the dashboard: jump to a section, or find an
-// application or customer by name / phone / reference. Lists are fetched
-// once on first open and filtered client-side — no new endpoints.
+// applicant/customer by name or phone — takes you straight to their KYC
+// review, the live decision page. The list is fetched once on first open
+// and filtered client-side — no new endpoint.
 export function CommandPalette({ nav }: { nav: NavItem[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [apps, setApps] = useState<AppRow[] | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -64,19 +57,13 @@ export function CommandPalette({ nav }: { nav: NavItem[] }) {
     setQuery("");
     setCursor(0);
     setTimeout(() => inputRef.current?.focus(), 0);
-    if (apps === null) {
-      apiFetch("/v1/admin/applications")
-        .then((r) => (r.ok ? r.json() : []))
-        .then(setApps)
-        .catch(() => setApps([]));
-    }
     if (customers === null) {
       apiFetch("/v1/admin/customers")
         .then((r) => (r.ok ? r.json() : []))
         .then(setCustomers)
         .catch(() => setCustomers([]));
     }
-  }, [open, apps, customers]);
+  }, [open, customers]);
 
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
@@ -86,33 +73,18 @@ export function CommandPalette({ nav }: { nav: NavItem[] }) {
 
     if (!q) return navHits;
 
-    const appHits: Result[] = (apps ?? [])
-      .filter(
-        (a) =>
-          a.fullName?.toLowerCase().includes(q) ||
-          a.reference?.toLowerCase().includes(q) ||
-          a.phone?.includes(q),
-      )
-      .slice(0, 6)
-      .map((a) => ({
-        kind: "application",
-        label: a.fullName || a.reference,
-        sublabel: `${a.reference} · ${a.status.replace(/_/g, " ")}`,
-        href: `/dashboard/applications/${a.id}`,
-      }));
-
     const custHits: Result[] = (customers ?? [])
       .filter((c) => c.fullName?.toLowerCase().includes(q) || c.phone?.includes(q))
-      .slice(0, 6)
+      .slice(0, 8)
       .map((c) => ({
         kind: "customer",
         label: c.fullName || c.phone,
-        sublabel: `${c.phone} · customer`,
+        sublabel: `${c.phone} · ${c.isVerified ? "verified" : "unverified"}`,
         href: `/dashboard/kyc/${c.id}`,
       }));
 
-    return [...navHits, ...appHits, ...custHits];
-  }, [query, visibleNav, apps, customers]);
+    return [...navHits, ...custHits];
+  }, [query, visibleNav, customers]);
 
   const choose = useCallback(
     (r: Result | undefined) => {
@@ -153,7 +125,7 @@ export function CommandPalette({ nav }: { nav: NavItem[] }) {
               choose(results[cursor]);
             }
           }}
-          placeholder="Jump to a section, or find an application or customer…"
+          placeholder="Jump to a section, or find an applicant by name or phone…"
           className="w-full border-b border-dark-border/60 px-4 py-3.5 text-sm text-text-dark outline-none placeholder:text-text-muted"
         />
         <ul className="max-h-80 overflow-y-auto py-1">

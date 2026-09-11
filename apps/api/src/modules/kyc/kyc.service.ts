@@ -508,6 +508,7 @@ export class KycService {
     if (input.yearsEmployed !== undefined) w.yearsEmployed = input.yearsEmployed;
     if (input.bankName !== undefined) w.bankName = input.bankName;
     if (input.accountNumber !== undefined) w.accountLast4 = input.accountNumber.slice(-4);
+    if (input.requestedLimitNaira !== undefined) w.requestedLimitKobo = nairaToKobo(input.requestedLimitNaira);
     return w;
   }
 

@@ -64,6 +64,13 @@
       "when": 1789107500813,
       "tag": "0008_polite_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789109975346,
+      "tag": "0009_romantic_gunslinger",
+      "breakpoints": true
     }
   ]
 }

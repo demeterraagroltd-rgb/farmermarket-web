@@ -58,6 +58,11 @@ export const applicantProfiles = pgTable("applicant_profiles", {
   netMonthlySalaryKobo: bigint("net_monthly_salary_kobo", { mode: "bigint" }),
   salaryDay: smallint("salary_day"),
   yearsEmployed: text("years_employed"),
+  // What the applicant asked for ("How much credit would you like?", step 4
+  // of the wizard) — accepted by registerSchema/updateKycSchema since the
+  // wizard ships it, but there was nowhere to put it until now, so every
+  // requested amount was silently dropped on the floor.
+  requestedLimitKobo: bigint("requested_limit_kobo", { mode: "bigint" }),
 
   // Banking. `monoAccountId` is set once the applicant links a salary account
   // through Mono Connect (POST /v1/kyc/link-bank). `bankAnalysis` is the

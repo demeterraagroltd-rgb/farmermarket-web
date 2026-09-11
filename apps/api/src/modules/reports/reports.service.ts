@@ -1,22 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { eq, gte, sql } from "drizzle-orm";
 import { koboToNaira } from "@farmermarket/core";
-import {
-  applications,
-  applicationDecisions,
-  creditProfiles,
-  repaymentSchedules,
-  type Db,
-} from "@farmermarket/db";
+import { applicantProfiles, creditProfiles, kycEvents, repaymentSchedules, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const PENDING_STATUSES = ["submitted", "auto_checks", "info_required", "credit_review", "escalated"] as const;
 
 /**
  * The Overview dashboard's numbers (§11.4, §12) — real queries over
- * applications / decisions / repayment_schedules / credit_profiles, replacing
- * the sample data the page shipped with. No new tables; all aggregations.
+ * applicant_profiles / kyc_events / repayment_schedules / credit_profiles.
+ *
+ * Earlier versions of this sourced applications-by-day, approval rate and
+ * decision speed from the `applications` / `application_decisions` tables —
+ * which is the origination model the plan describes, but nothing has
+ * written to it since registration moved onto applicant_profiles / the KYC
+ * flow. Every metric here now reads the tables that flow actually
+ * populates, so it moves when real applicants move instead of sitting at
+ * zero next to real-looking SQL.
  */
 @Injectable()
 export class ReportsService {
@@ -27,15 +27,16 @@ export class ReportsService {
     const since30 = new Date(now.getTime() - 30 * DAY_MS);
     const par30Cutoff = new Date(now.getTime() - 30 * DAY_MS);
 
-    const [applicationsByDay, decisions, decisionSpeed, queue, portfolio, activeLimits] =
+    const [applicationsByDay, decisions, decisionSpeed, queue, totalApplicants, portfolio, activeLimits] =
       await Promise.all([
         this.applicationsByDay(now),
         this.decisions(since30),
         this.decisionSpeedHours(since30),
         this.db
           .select({ n: sql<number>`count(*)::int` })
-          .from(applications)
-          .where(sql`${applications.status} in ${sql.raw(`(${PENDING_STATUSES.map((s) => `'${s}'`).join(",")})`)}`),
+          .from(applicantProfiles)
+          .where(eq(applicantProfiles.verificationStatus, "submitted")),
+        this.db.select({ n: sql<number>`count(*)::int` }).from(applicantProfiles),
         this.portfolio(par30Cutoff),
         this.db
           .select({ n: sql<number>`count(*)::int` })
@@ -45,6 +46,7 @@ export class ReportsService {
 
     return {
       generatedAt: now.toISOString(),
+      totalApplicants: totalApplicants[0]?.n ?? 0,
       applicationsByDay,
       approvalRate: {
         decided: decisions.total,
@@ -62,17 +64,19 @@ export class ReportsService {
   }
 
   private async applicationsByDay(now: Date) {
-    // Last 7 days including today, keyed by date; submittedAt (falls back to
-    // createdAt for the rare draft that never got a submittedAt).
+    // Last 7 days including today, keyed by date. submittedAt is when the
+    // applicant hits "Submit for verification" — falls back to createdAt
+    // (account creation) so an applicant who never finished submitting still
+    // shows up on the day they started.
     const start = new Date(now.getTime() - 6 * DAY_MS);
     start.setHours(0, 0, 0, 0);
     const rows = await this.db
       .select({
-        day: sql<string>`to_char(coalesce(${applications.submittedAt}, ${applications.createdAt}) at time zone 'UTC', 'YYYY-MM-DD')`,
+        day: sql<string>`to_char(coalesce(${applicantProfiles.submittedAt}, ${applicantProfiles.createdAt}) at time zone 'UTC', 'YYYY-MM-DD')`,
         n: sql<number>`count(*)::int`,
       })
-      .from(applications)
-      .where(gte(sql`coalesce(${applications.submittedAt}, ${applications.createdAt})`, start))
+      .from(applicantProfiles)
+      .where(gte(sql`coalesce(${applicantProfiles.submittedAt}, ${applicantProfiles.createdAt})`, start))
       .groupBy(sql`1`);
 
     const byDay = new Map(rows.map((r) => [r.day, r.n]));
@@ -87,26 +91,39 @@ export class ReportsService {
     });
   }
 
+  // A "decision" is a kyc_events row landing on verified or needs_more_info
+  // — the KYC flow's two outcomes (there's no separate decline; needs_more_info
+  // is "send it back," not final). approved = verified.
   private async decisions(since: Date) {
     const [row] = await this.db
       .select({
         total: sql<number>`count(*)::int`,
-        approved: sql<number>`count(*) filter (where ${applicationDecisions.outcome} = 'approved')::int`,
+        approved: sql<number>`count(*) filter (where ${kycEvents.toStatus} = 'verified')::int`,
       })
-      .from(applicationDecisions)
-      .where(gte(applicationDecisions.createdAt, since));
+      .from(kycEvents)
+      .where(
+        sql`${kycEvents.toStatus} in ('verified', 'needs_more_info') and ${kycEvents.createdAt} >= ${since}`,
+      );
     return { total: row?.total ?? 0, approved: row?.approved ?? 0 };
   }
 
+  // For each decision event, find the most recent prior "submitted" event
+  // for the same applicant and diff the timestamps — accurate across
+  // resubmissions, unlike comparing against applicant_profiles.submittedAt
+  // directly (that column gets overwritten on every resubmit).
   private async decisionSpeedHours(since: Date): Promise<number | null> {
-    const [row] = await this.db
-      .select({
-        hours: sql<number | null>`avg(extract(epoch from (${applicationDecisions.createdAt} - ${applications.submittedAt})) / 3600.0)`,
-      })
-      .from(applicationDecisions)
-      .innerJoin(applications, eq(applicationDecisions.applicationId, applications.id))
-      .where(and(gte(applicationDecisions.createdAt, since), isNotNull(applications.submittedAt)));
-    return row?.hours == null ? null : Math.round(Number(row.hours) * 10) / 10;
+    const [row] = await this.db.execute<{ hours: number | null }>(sql`
+      select avg(extract(epoch from (e.created_at - sub.submitted_at)) / 3600.0) as hours
+      from kyc_events e
+      join lateral (
+        select max(s.created_at) as submitted_at
+        from kyc_events s
+        where s.user_id = e.user_id and s.to_status = 'submitted' and s.created_at < e.created_at
+      ) sub on sub.submitted_at is not null
+      where e.to_status in ('verified', 'needs_more_info') and e.created_at >= ${since}
+    `);
+    const hours = row?.hours;
+    return hours == null ? null : Math.round(Number(hours) * 10) / 10;
   }
 
   private async portfolio(par30Cutoff: Date) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getRole, getToken, type StaffRole } from "../../../../lib/auth";
 import { Card, PageHeader } from "../../../../components/ui/Card";
@@ -8,13 +8,8 @@ import { StatCard } from "../../../../components/ui/StatCard";
 import { Badge } from "../../../../components/ui/Badge";
 import { BarChart, RingGauge } from "../../../../components/ui/Charts";
 
-interface Application {
-  id: string;
-  status: string;
-  requestedLimitKobo: string;
-}
-
 interface Overview {
+  totalApplicants: number;
   applicationsByDay: Array<{ label: string; date: string; count: number }>;
   approvalRate: { decided: number; approved: number; rate: number | null; windowDays: number };
   operations: { queueDepth: number; avgDecisionHours: number | null };
@@ -28,7 +23,6 @@ interface Overview {
   activeLimits: number;
 }
 
-const PENDING_STATUSES = new Set(["submitted", "auto_checks", "info_required", "credit_review", "escalated"]);
 const NGN = new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 });
 
 const ROLE_GREETING: Record<StaffRole, string> = {
@@ -41,7 +35,6 @@ const ROLE_GREETING: Record<StaffRole, string> = {
 export default function OverviewPage() {
   const router = useRouter();
   const [role, setRole] = useState<StaffRole | null>(null);
-  const [applications, setApplications] = useState<Application[] | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,31 +47,18 @@ export default function OverviewPage() {
     setRole(currentRole);
     if (currentRole === "sales") return;
 
-    apiFetch("/v1/admin/applications")
+    apiFetch("/v1/admin/reports/overview")
       .then(async (res) => {
         if (res.status === 401) {
           router.push("/login");
           return;
         }
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.message ?? "Failed to load applications");
-        setApplications(body);
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? "Failed to load");
+        setOverview(await res.json());
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load applications"));
-
-    apiFetch("/v1/admin/reports/overview")
-      .then((res) => (res.ok ? res.json() : null))
-      .then(setOverview)
-      .catch(() => setOverview(null));
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const stats = useMemo(() => {
-    if (!applications) return null;
-    const pending = applications.filter((a) => PENDING_STATUSES.has(a.status)).length;
-    const active = applications.filter((a) => a.status === "limit_active").length;
-    return { total: applications.length, pending, active };
-  }, [applications]);
 
   const pct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
@@ -101,17 +81,13 @@ export default function OverviewPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-3 gap-4">
-          <StatCard label="Total applications" value={stats?.total ?? "—"} />
+          <StatCard label="Total applicants" value={overview?.totalApplicants ?? "—"} />
           <StatCard
             label="Awaiting a decision"
-            value={overview?.operations.queueDepth ?? stats?.pending ?? "—"}
+            value={overview?.operations.queueDepth ?? "—"}
             tone={(overview?.operations.queueDepth ?? 0) > 0 ? "warning" : "default"}
           />
-          <StatCard
-            label="Active credit limits"
-            value={overview?.activeLimits ?? stats?.active ?? "—"}
-            tone="success"
-          />
+          <StatCard label="Active credit limits" value={overview?.activeLimits ?? "—"} tone="success" />
         </div>
       )}
 
@@ -178,7 +154,7 @@ export default function OverviewPage() {
             <div className="flex items-center justify-between">
               <span className="text-xs text-text-muted">Queue depth</span>
               <span className="text-sm font-semibold tabular-nums text-text-dark">
-                {overview?.operations.queueDepth ?? stats?.pending ?? "—"}
+                {overview?.operations.queueDepth ?? "—"}
               </span>
             </div>
             <div className="flex items-center justify-between">

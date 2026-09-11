@@ -9,7 +9,6 @@ import { Badge } from "../../components/ui/Badge";
 import { CommandPalette } from "../../components/site/CommandPalette";
 import {
   GridIcon,
-  InboxIcon,
   PeopleIcon,
   BoxIcon,
   BadgeCheckIcon,
@@ -23,9 +22,13 @@ import {
 // shouldn't see a "Customers" link that dead-ends. Overview is the one
 // exception: every role lands somewhere, even if — for sales — that's a
 // preview of a pipeline view that isn't built yet (§11.4).
+//
+// There is deliberately no "Applications" entry: that table hasn't been
+// written to since registration moved onto applicant_profiles (see
+// /dashboard root's redirect). Verification is the real, live decision
+// queue — it reads applicant_profiles and is what actually gates checkout.
 const NAV: Array<{ href: string; label: string; icon: typeof GridIcon; roles: StaffRole[] }> = [
   { href: "/dashboard/overview", label: "Overview", icon: GridIcon, roles: ["super_admin", "admin", "credit", "sales"] },
-  { href: "/dashboard", label: "Applications", icon: InboxIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/customers", label: "Customers", icon: PeopleIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/kyc", label: "Verification", icon: BadgeCheckIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/catalog", label: "Catalog", icon: BoxIcon, roles: ["super_admin", "admin"] },
