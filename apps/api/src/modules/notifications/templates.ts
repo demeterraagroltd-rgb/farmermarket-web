@@ -123,6 +123,15 @@ export const emails = {
       `<p>Hi ${name},</p><p>Your account is verified. You can now check out — each order still gets a quick approval before delivery.</p>`,
     ),
   }),
+  bankLinkRequested: (name: string) => ({
+    subject: "Speed up your verification — link your salary account",
+    html: wrap(
+      `<p>Hi ${name},</p><p>A credit officer reviewing your application asked us to reach out: linking your ` +
+        `salary account lets us verify your income automatically, which can speed up your decision.</p>` +
+        `<p>It's optional and read-only — we can't move money from it. Open the app or your application page ` +
+        `and you'll see a "Link your salary account" option.</p>`,
+    ),
+  }),
   orderApproved: (name: string, opts: { total: string; deliverySlot?: string | null; address: string }) => ({
     subject: "Your order is approved",
     html: wrap(

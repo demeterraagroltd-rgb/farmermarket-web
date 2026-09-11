@@ -1,0 +1,1 @@
+ALTER TABLE "applicant_profiles" ADD COLUMN "bank_link_requested_at" timestamp with time zone;

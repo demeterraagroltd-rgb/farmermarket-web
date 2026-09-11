@@ -347,6 +347,31 @@ export class KycService {
     };
   }
 
+  /**
+   * A credit officer asks this applicant to link their salary account.
+   * Reviewer-initiated by design — the wizard never shows it unprompted (an
+   * unrequested "link your bank" ask reads as a phishing pattern to a real
+   * applicant, and most applications are decided on documents alone anyway).
+   */
+  async requestBankLink(staffId: string, userId: string) {
+    const profile = await this.getProfileRow(userId);
+    if (profile.monoAccountId) {
+      throw new BadRequestException("This applicant has already linked a bank account");
+    }
+    await this.db
+      .update(applicantProfiles)
+      .set({ bankLinkRequestedAt: new Date(), updatedAt: new Date() })
+      .where(eq(applicantProfiles.userId, userId));
+    await this.db.insert(auditLogs).values({
+      actorStaffId: staffId,
+      action: "kyc.bank_link_requested",
+      targetType: "user",
+      targetId: userId,
+    });
+    void this.email.send({ to: profile.email, ...emails.bankLinkRequested(profile.fullName) });
+    return this.getForStaff(staffId, userId);
+  }
+
   async reviewDocument(staffId: string, userId: string, docId: string, input: ReviewDocumentInput) {
     if (input.status === "rejected" && !input.rejectionReason) {
       throw new BadRequestException("A reason is required when rejecting a document");

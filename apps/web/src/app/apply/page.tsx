@@ -14,7 +14,6 @@ import { customerFetch, getCustomerSession, readError, saveCustomerSession } fro
 // answers + which step they're on to localStorage; the bearer token comes
 // back from the persisted customer session (saved at the account step).
 const DRAFT_KEY = "farmermarket_apply_draft";
-import { MonoConnectButton, type BankAnalysis } from "../../components/site/MonoConnectButton";
 
 // The full customer KYC onboarding wizard (WEB_APP_PLAN §11.3). It creates the
 // account at the "Account" step via POST /v1/auth/customer/register, then
@@ -137,7 +136,6 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const [bankLinked, setBankLinked] = useState<BankAnalysis | null>(null);
   const [resumable, setResumable] = useState<{ form: FormState; step: number; userId: string | null } | null>(null);
   const hydrated = useRef(false);
 
@@ -612,33 +610,6 @@ export default function ApplyPage() {
                     <Input type="number" label="Salary day of month (optional)" value={form.salaryDay} onChange={(e) => update("salaryDay", e.target.value)} min={1} max={31} />
                   </div>
                   <Input type="number" label="How much credit would you like? ₦ (optional)" value={form.requestedLimitNaira} onChange={(e) => update("requestedLimitNaira", e.target.value)} min={0} />
-
-                  <div className="mt-1 rounded-[var(--radius-sm)] border border-dark-border/60 p-3">
-                    <p className="text-sm font-medium text-text-dark">Link your salary account</p>
-                    <p className="mt-0.5 mb-2 text-xs text-text-muted">
-                      Optional, but it verifies your income automatically and speeds up approval.
-                      Read-only — we can&apos;t move money.
-                    </p>
-                    {bankLinked ? (
-                      <div className="rounded-[var(--radius-sm)] bg-primary-surface px-3 py-2 text-xs text-primary">
-                        <span className="font-semibold">
-                          {bankLinked.salaryDetected ? "Salary detected" : "Account linked"}
-                        </span>
-                        {bankLinked.estimatedMonthlyIncomeKobo != null && (
-                          <> · ~₦{Math.round(bankLinked.estimatedMonthlyIncomeKobo / 100).toLocaleString()}/mo</>
-                        )}
-                        {bankLinked.institution && <> · {bankLinked.institution}</>}
-                      </div>
-                    ) : token ? (
-                      <MonoConnectButton
-                        token={token}
-                        customer={{ name: form.fullName || undefined, email: form.email || undefined }}
-                        onLinked={setBankLinked}
-                      />
-                    ) : (
-                      <p className="text-xs text-text-muted">Available after the first step.</p>
-                    )}
-                  </div>
                 </>
               )}
 

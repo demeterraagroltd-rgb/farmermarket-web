@@ -70,6 +70,10 @@ export const applicantProfiles = pgTable("applicant_profiles", {
   monoAccountId: text("mono_account_id"),
   bankLinkedAt: timestamp("bank_linked_at", { withTimezone: true }),
   bankAnalysis: jsonb("bank_analysis"),
+  // Bank linking is reviewer-initiated, not self-serve — an applicant only
+  // sees the "link your account" prompt after a credit officer asks for it
+  // from the review workspace (POST /admin/kyc/:userId/request-bank-link).
+  bankLinkRequestedAt: timestamp("bank_link_requested_at", { withTimezone: true }),
 
   verificationStatus: verificationStatusEnum("verification_status").notNull().default("unverified"),
   verificationNote: text("verification_note"), // reviewer -> applicant: what to fix

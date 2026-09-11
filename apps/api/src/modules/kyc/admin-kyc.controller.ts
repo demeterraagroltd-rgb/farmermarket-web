@@ -52,4 +52,10 @@ export class AdminKycController {
   ) {
     return this.kyc.decideVerification(staff.staffId, userId, body);
   }
+
+  // Reviewer-initiated bank linking — see KycService.requestBankLink.
+  @Patch(":userId/request-bank-link")
+  requestBankLink(@CurrentStaff() staff: AuthenticatedStaff, @Param("userId") userId: string) {
+    return this.kyc.requestBankLink(staff.staffId, userId);
+  }
 }

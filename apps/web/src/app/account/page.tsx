@@ -17,6 +17,7 @@ import {
   type CustomerSession,
   type VerificationStatus,
 } from "../../lib/customer";
+import { MonoConnectButton, type BankAnalysis } from "../../components/site/MonoConnectButton";
 
 interface CreditProfile {
   totalLimit: number;
@@ -96,6 +97,8 @@ const ORDER_STATUS_TONE: Record<string, "success" | "warning" | "error" | "info"
 interface KycView {
   verificationNote: string | null;
   rejectedDocs: Array<{ kind: string; rejectionReason: string | null }>;
+  bankLinkRequested: boolean;
+  bankLinked: boolean;
 }
 
 export default function AccountPage() {
@@ -106,6 +109,7 @@ export default function AccountPage() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [repayments, setRepayments] = useState<Repayment[] | null>(null);
   const [kyc, setKyc] = useState<KycView | null>(null);
+  const [bankLinked, setBankLinked] = useState<BankAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -148,6 +152,8 @@ export default function AccountPage() {
               kind: d.kind,
               rejectionReason: d.rejectionReason,
             })),
+          bankLinkRequested: !!body?.profile?.bankLinkRequestedAt,
+          bankLinked: !!body?.profile?.monoAccountId,
         });
       })
       .catch(() => {});
@@ -242,6 +248,38 @@ export default function AccountPage() {
               </div>
             ) : null}
           </Card>
+
+          {/* Only shown once a credit officer has actually asked for it —
+              never a self-serve, unprompted "link your bank" ask. */}
+          {kyc?.bankLinkRequested && !kyc.bankLinked && !bankLinked && (
+            <Card className="mt-6 p-5">
+              <p className="text-sm font-medium text-text-dark">A credit officer asked you to link your salary account</p>
+              <p className="mt-1 text-xs text-text-muted">
+                It verifies your income automatically and can speed up your decision. Optional and
+                read-only — we can&apos;t move money from it.
+              </p>
+              <div className="mt-3">
+                <MonoConnectButton
+                  token={session.token}
+                  customer={{ name: session.fullName || undefined }}
+                  onLinked={setBankLinked}
+                />
+              </div>
+            </Card>
+          )}
+          {bankLinked && (
+            <Card className="mt-6 p-5">
+              <div className="flex items-center gap-2 text-sm text-primary">
+                <Badge tone="success">Linked</Badge>
+                <span>
+                  {bankLinked.salaryDetected ? "Salary detected" : "Account linked"}
+                  {bankLinked.estimatedMonthlyIncomeKobo != null &&
+                    ` · ~₦${Math.round(bankLinked.estimatedMonthlyIncomeKobo / 100).toLocaleString()}/mo`}
+                  {bankLinked.institution && ` · ${bankLinked.institution}`}
+                </span>
+              </div>
+            </Card>
+          )}
 
           {credit && (
             <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">

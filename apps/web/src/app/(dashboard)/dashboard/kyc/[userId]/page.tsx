@@ -70,14 +70,55 @@ interface BankAnalysis {
 // The Mono bank-linking result (§9.1). Written by POST /v1/kyc/link-bank;
 // null until the applicant links a salary account in the wizard.
 function BankAnalysisView({
+  userId,
   analysis,
   linkedAt,
+  requestedAt,
+  onRequested,
 }: {
+  userId: string;
   analysis: unknown;
   linkedAt: string | null | undefined;
+  requestedAt: string | null | undefined;
+  onRequested: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!analysis || typeof analysis !== "object") {
-    return <p className="py-1 text-sm text-text-muted">No account linked.</p>;
+    // Reviewer-initiated only — no "link your bank" prompt goes to an
+    // applicant unless a credit officer actually asks for it here.
+    async function request() {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await apiFetch(`/v1/admin/kyc/${userId}/request-bank-link`, { method: "PATCH" });
+        if (!res.ok) throw new Error((await res.json()).message ?? "Failed");
+        onRequested();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    return (
+      <div className="py-1">
+        {requestedAt ? (
+          <p className="text-sm text-text-muted">
+            Requested {formatDateTime(requestedAt)} — waiting on the applicant.
+          </p>
+        ) : (
+          <>
+            <p className="mb-2 text-sm text-text-muted">No account linked.</p>
+            <Button type="button" variant="secondary" disabled={busy} onClick={request}>
+              {busy ? "Requesting…" : "Request bank verification"}
+            </Button>
+          </>
+        )}
+        {error && <p className="mt-1.5 text-xs text-error">{error}</p>}
+      </div>
+    );
   }
   const a = analysis as BankAnalysis;
   const naira = (kobo: number | null) =>
@@ -245,8 +286,11 @@ export default function KycDetailPage() {
             <Field label="Requested" value={p.requestedLimitNaira ? `₦${p.requestedLimitNaira}` : "—"} />
             <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Bank verification</h3>
             <BankAnalysisView
+              userId={userId}
               analysis={(p as Record<string, unknown>).bankAnalysis}
               linkedAt={(p as Record<string, unknown>).bankLinkedAt as string | null | undefined}
+              requestedAt={(p as Record<string, unknown>).bankLinkRequestedAt as string | null | undefined}
+              onRequested={load}
             />
             <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Next of kin</h3>
             <Field label="Name" value={nok.name} />
