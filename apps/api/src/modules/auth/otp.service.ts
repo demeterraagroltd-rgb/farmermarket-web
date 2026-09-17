@@ -74,7 +74,7 @@ export class OtpService {
     try {
       await this.sms.send(
         phone,
-        `Your Demeterra verification code is ${code}. It expires in 10 minutes. Don't share it with anyone.`,
+        `Your Farmer Market verification code is ${code}. It expires in 10 minutes. Don't share it with anyone.`,
       );
     } catch (err) {
       delivered = false;

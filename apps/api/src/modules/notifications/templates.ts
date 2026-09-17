@@ -4,16 +4,16 @@
 function wrap(body: string): string {
   return `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:15px;color:#0D2119;line-height:1.6">
 ${body}
-<p style="margin-top:24px;color:#7A9D8C;font-size:13px">— Demeterra · reply to this email and it reaches us at admin@farmermarket.ng</p>
+<p style="margin-top:24px;color:#7A9D8C;font-size:13px">— Farmer Market · reply to this email and it reaches us at admin@farmermarket.ng</p>
 </div>`;
 }
 
 export const emails = {
   // ── Account ───────────────────────────────────────────────────────────
   welcome: (name: string) => ({
-    subject: "Welcome to Demeterra",
+    subject: "Welcome to Farmer Market",
     html: wrap(
-      `<p>Hi ${name},</p><p>Your Demeterra account is set up. Next: complete verification so you can check out on credit — we'll walk you through it in the app.</p>`,
+      `<p>Hi ${name},</p><p>Your Farmer Market account is set up. Next: complete verification so you can check out on credit — we'll walk you through it in the app.</p>`,
     ),
   }),
 
@@ -21,7 +21,7 @@ export const emails = {
   applicationReceived: (name: string, opts: { reference: string; requestedLimit: string }) => ({
     subject: `We've received your application (${opts.reference})`,
     html: wrap(
-      `<p>Hi ${name},</p><p>Thanks for applying for a Demeterra credit limit of <strong>${opts.requestedLimit}</strong>.</p>` +
+      `<p>Hi ${name},</p><p>Thanks for applying for a Farmer Market credit limit of <strong>${opts.requestedLimit}</strong>.</p>` +
         `<p>Reference: <strong>${opts.reference}</strong>. Our team will review it and email you the decision.</p>`,
     ),
   }),
@@ -78,7 +78,7 @@ export const emails = {
     html: wrap(
       `<p>Hi ${name},</p><p>A quick reminder that installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
         ` — <strong>${opts.amount}</strong> — is due <strong>${opts.dueLabel}</strong> (${opts.dueDate}).</p>` +
-        `<p>Open the Demeterra app to pay. If you've already paid, thank you — you can ignore this.</p>`,
+        `<p>Open the Farmer Market app to pay. If you've already paid, thank you — you can ignore this.</p>`,
     ),
   }),
   repaymentOverdue: (
@@ -100,7 +100,7 @@ export const emails = {
         ` — <strong>${opts.amount}</strong> — is <strong>${opts.daysPastDue} ${opts.daysPastDue === 1 ? "day" : "days"} overdue</strong>.</p>` +
         (opts.severe
           ? `<p>Please reply to this email or contact us so we can work out a plan. Continued non-payment affects your credit standing and future limit.</p>`
-          : `<p>Please pay in the Demeterra app as soon as you can to keep your account in good standing.</p>`),
+          : `<p>Please pay in the Farmer Market app as soon as you can to keep your account in good standing.</p>`),
     ),
   }),
 

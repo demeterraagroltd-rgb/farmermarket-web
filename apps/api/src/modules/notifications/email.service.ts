@@ -19,7 +19,7 @@ interface EmailInput {
 @Injectable()
 export class EmailService {
   private readonly log = new Logger(EmailService.name);
-  private readonly from = process.env.EMAIL_FROM ?? "Demeterra <noreply@farmermarket.ng>";
+  private readonly from = process.env.EMAIL_FROM ?? "Farmer Market <noreply@farmermarket.ng>";
   private readonly replyTo = process.env.EMAIL_REPLY_TO ?? "admin@farmermarket.ng";
 
   async send({ to, subject, html, replyTo }: EmailInput): Promise<void> {

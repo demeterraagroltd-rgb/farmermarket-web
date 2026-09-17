@@ -52,7 +52,7 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
-        value: Demeterra <noreply@farmermarket.ng>
+        value: Farmer Market <noreply@farmermarket.ng>
       # Where customer replies land — a monitored inbox, not the unattended
       # `from` address.
       - key: EMAIL_REPLY_TO

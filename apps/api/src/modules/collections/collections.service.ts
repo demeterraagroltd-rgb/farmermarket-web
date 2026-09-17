@@ -130,8 +130,8 @@ export class CollectionsService {
 
       const smsText =
         kind === "overdue"
-          ? `Demeterra: installment ${r.installmentNumber}/${r.totalInstallments} of ${amountDue} is ${daysPastDue} ${daysPastDue === 1 ? "day" : "days"} overdue. Please pay in the app.`
-          : `Demeterra: ${amountDue} (installment ${r.installmentNumber}/${r.totalInstallments}) is due ${kind === "reminder_tomorrow" ? "tomorrow" : "today"}. Pay in the app.`;
+          ? `Farmer Market: installment ${r.installmentNumber}/${r.totalInstallments} of ${amountDue} is ${daysPastDue} ${daysPastDue === 1 ? "day" : "days"} overdue. Please pay in the app.`
+          : `Farmer Market: ${amountDue} (installment ${r.installmentNumber}/${r.totalInstallments}) is due ${kind === "reminder_tomorrow" ? "tomorrow" : "today"}. Pay in the app.`;
 
       if (r.buyerEmail) {
         channels.push("email");
