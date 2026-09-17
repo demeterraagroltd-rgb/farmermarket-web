@@ -1,3 +1,8 @@
+// Load apps/api/.env before anything else reads process.env — the DB and every
+// integration module resolve their config at bootstrap, so this has to come
+// first. On Render there is no .env file and dotenv no-ops, leaving the real
+// dashboard env vars untouched.
+import "dotenv/config";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
