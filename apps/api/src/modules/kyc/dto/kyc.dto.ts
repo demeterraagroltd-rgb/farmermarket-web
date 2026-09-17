@@ -110,6 +110,37 @@ export class LinkBankDto implements LinkBankInput {
   code!: string;
 }
 
+// Mono Lookup BVN consent, in three legs (§9.1). The session id deliberately
+// never crosses the wire — KycService holds it against the user id — so these
+// bodies carry only what the applicant actually types.
+export const bvnLookupStartSchema = z.object({
+  bvn: z.string().regex(/^\d{11}$/, "BVN must be 11 digits"),
+});
+export type BvnLookupStartInput = z.infer<typeof bvnLookupStartSchema>;
+export class BvnLookupStartDto implements BvnLookupStartInput {
+  @ApiProperty({ description: "11-digit BVN to verify" }) bvn!: string;
+}
+
+export const bvnLookupOtpSchema = z.object({
+  // One of the `method` values from the start call — passed back verbatim.
+  method: z.string().min(1),
+  // Required only for the "alternate_phone" method.
+  phoneNumber: z.string().min(7).optional(),
+});
+export type BvnLookupOtpInput = z.infer<typeof bvnLookupOtpSchema>;
+export class BvnLookupOtpDto implements BvnLookupOtpInput {
+  @ApiProperty({ description: "A `method` from the start response" }) method!: string;
+  @ApiPropertyOptional({ description: "Only for the alternate_phone method" }) phoneNumber?: string;
+}
+
+export const bvnLookupCompleteSchema = z.object({
+  otp: z.string().regex(/^\d{4,8}$/, "Enter the code you were sent"),
+});
+export type BvnLookupCompleteInput = z.infer<typeof bvnLookupCompleteSchema>;
+export class BvnLookupCompleteDto implements BvnLookupCompleteInput {
+  @ApiProperty({ description: "The OTP NIBSS sent to the BVN holder" }) otp!: string;
+}
+
 export const uploadDocumentSchema = z.object({
   kind: z.enum(DOCUMENT_KINDS),
 });

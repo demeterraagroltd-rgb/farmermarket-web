@@ -17,6 +17,12 @@ import { CurrentUser, type AuthenticatedUser } from "../../common/decorators/cur
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { KycService } from "./kyc.service";
 import {
+  BvnLookupCompleteDto,
+  bvnLookupCompleteSchema,
+  BvnLookupOtpDto,
+  bvnLookupOtpSchema,
+  BvnLookupStartDto,
+  bvnLookupStartSchema,
   LinkBankDto,
   linkBankSchema,
   RegisterDto,
@@ -71,6 +77,33 @@ export class KycController {
     @Body(new ZodValidationPipe(linkBankSchema)) body: LinkBankDto,
   ) {
     return this.kyc.linkBank(user.userId, body.code);
+  }
+
+  // Mono Lookup BVN consent — three legs, because NIBSS makes the BVN holder
+  // approve the disclosure with an OTP. The session id lives in the service,
+  // so these bodies carry only what the applicant types.
+  @Post("bvn-lookup/start")
+  startBvnLookup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(bvnLookupStartSchema)) body: BvnLookupStartDto,
+  ) {
+    return this.kyc.startBvnLookup(user.userId, body.bvn);
+  }
+
+  @Post("bvn-lookup/send-otp")
+  sendBvnLookupOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(bvnLookupOtpSchema)) body: BvnLookupOtpDto,
+  ) {
+    return this.kyc.sendBvnLookupOtp(user.userId, body.method, body.phoneNumber);
+  }
+
+  @Post("bvn-lookup/complete")
+  completeBvnLookup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(bvnLookupCompleteSchema)) body: BvnLookupCompleteDto,
+  ) {
+    return this.kyc.completeBvnLookup(user.userId, body.otp);
   }
 
   @Post("documents")

@@ -80,6 +80,15 @@ export const applicantProfiles = pgTable("applicant_profiles", {
   // from the review workspace (POST /admin/kyc/:userId/request-bank-link).
   bankLinkRequestedAt: timestamp("bank_link_requested_at", { withTimezone: true }),
 
+  // Identity verification via Mono Lookup (§9.1). `identityLookup` holds the
+  // normalised comparison a reviewer reads — which declared fields the
+  // government record agreed with — never the record itself: no photo, no
+  // plaintext BVN (that stays hashed above), nothing we didn't already ask
+  // the applicant for. JSONB for the same reason as `bankAnalysis`: one
+  // applicant, one latest result, read as part of the profile.
+  identityLookup: jsonb("identity_lookup"),
+  identityLookupAt: timestamp("identity_lookup_at", { withTimezone: true }),
+
   verificationStatus: verificationStatusEnum("verification_status").notNull().default("unverified"),
   verificationNote: text("verification_note"), // reviewer -> applicant: what to fix
   verifiedAt: timestamp("verified_at", { withTimezone: true }),

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -51,6 +51,15 @@ export class AdminKycController {
     @Body(new ZodValidationPipe(verifyKycSchema)) body: VerifyKycDto,
   ) {
     return this.kyc.decideVerification(staff.staffId, userId, body);
+  }
+
+  // NIN carries no consent leg and is stored in plain text, so a reviewer
+  // runs it straight from the workspace — no applicant round-trip. BVN can't
+  // work this way: we only hold a hash of it, and NIBSS wants the holder's
+  // OTP, so that flow lives on the applicant's side (POST /v1/kyc/bvn-lookup/*).
+  @Post(":userId/nin-lookup")
+  ninLookup(@CurrentStaff() staff: AuthenticatedStaff, @Param("userId") userId: string) {
+    return this.kyc.lookupNin(staff.staffId, userId);
   }
 
   // Reviewer-initiated bank linking — see KycService.requestBankLink.

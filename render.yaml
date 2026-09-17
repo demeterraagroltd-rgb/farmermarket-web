@@ -80,6 +80,13 @@ services:
         sync: false
       - key: MONO_WEBHOOK_SECRET
         sync: false
+      # Mono Lookup — BVN/NIN identity verification. A *separate* Mono app
+      # from Connect with its own secret key, and never borrowed from
+      # MONO_SECRET_KEY: unset ⇒ the fake client, which stamps every result
+      # "Sandbox — not verified" in the review workspace. Set it here too, or
+      # production quietly runs identity checks against canned data.
+      - key: MONO_LOOKUP_SECRET_KEY
+        sync: false
       # Inbox — reads and replies to admin@farmermarket.ng inside the
       # dashboard (§ staff Inbox section). IMAP for receiving, SMTP for
       # sending; most hosts (Zoho, cPanel, Google Workspace) use the same

@@ -28,7 +28,13 @@ import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
 import { OtpService } from "../auth/otp.service";
 import { MONO_CLIENT, type MonoClient } from "../integrations/mono/mono.types";
+import {
+  LOOKUP_CLIENT,
+  type IdentityRecord,
+  type LookupClient,
+} from "../integrations/mono-lookup/lookup.types";
 import { analyseBank } from "./bank-analysis";
+import { matchIdentity } from "./identity-match";
 import type { RegisterInput, UpdateKycInput, ReviewDocumentInput, VerifyKycInput } from "./dto/kyc.dto";
 
 const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
@@ -45,6 +51,10 @@ const REQUIRED_PROFILE_FIELDS: (keyof typeof applicantProfiles.$inferSelect)[] =
 ];
 const ID_DOC_KINDS = ["id_card", "passport", "drivers_license"] as const;
 
+// Mono gives a BVN consent session ~10 minutes; expire ours no later than
+// that so a stale session fails with our wording rather than theirs.
+const BVN_CONSENT_TTL_MS = 10 * 60 * 1000;
+
 type ProfileWrite = Partial<typeof applicantProfiles.$inferInsert>;
 
 @Injectable()
@@ -55,7 +65,17 @@ export class KycService {
     private readonly email: EmailService,
     private readonly otp: OtpService,
     @Inject(MONO_CLIENT) private readonly mono: MonoClient,
+    @Inject(LOOKUP_CLIENT) private readonly lookup: LookupClient,
   ) {}
+
+  /**
+   * In-flight BVN consent sessions, keyed by user id. In memory on purpose:
+   * they die in 10 minutes, they're worthless once spent, and a restart
+   * losing them just means the applicant asks for a new code. If the API
+   * ever runs more than one instance this needs to move to Redis — a
+   * follow-up leg would otherwise land on a process that never saw stage 1.
+   */
+  private readonly bvnConsents = new Map<string, { sessionId: string; expiresAt: number }>();
 
   // ── Registration ────────────────────────────────────────────────────────
 
@@ -370,6 +390,105 @@ export class KycService {
     });
     void this.email.send({ to: profile.email, ...emails.bankLinkRequested(profile.fullName) });
     return this.getForStaff(staffId, userId);
+  }
+
+  // ── Identity verification (Mono Lookup, §9.1) ───────────────────────────
+
+  /**
+   * Stage 1 of BVN consent. The applicant retypes their BVN because we only
+   * ever stored a hash of it (§13) — there is nothing to look up on their
+   * behalf. That hash does let us check they're verifying the BVN they
+   * actually declared, rather than any valid one.
+   *
+   * The Mono session id stays server-side, keyed by user id: handing it to
+   * the browser would let whoever holds it finish someone else's consent.
+   */
+  async startBvnLookup(userId: string, bvn: string) {
+    const profile = await this.getProfileRow(userId);
+    if (profile.bvnHash && !(await argon2.verify(profile.bvnHash, bvn))) {
+      throw new BadRequestException("That BVN doesn't match the one on your application");
+    }
+    const { sessionId, methods } = await this.lookup.initiateBvn(bvn);
+    this.bvnConsents.set(userId, { sessionId, expiresAt: Date.now() + BVN_CONSENT_TTL_MS });
+    return {
+      methods,
+      expiresInSeconds: BVN_CONSENT_TTL_MS / 1000,
+      // So the UI can say "sandbox result" rather than implying NIBSS
+      // confirmed anything.
+      live: this.lookup.live,
+    };
+  }
+
+  /** Stage 2 — ask NIBSS to send the code to the method the holder picked. */
+  async sendBvnLookupOtp(userId: string, method: string, phoneNumber?: string) {
+    const consent = this.activeConsent(userId);
+    await this.lookup.sendBvnOtp(consent.sessionId, method, phoneNumber);
+    return { sent: true as const };
+  }
+
+  /** Stage 3 — exchange the OTP for the record and store the comparison. */
+  async completeBvnLookup(userId: string, otp: string) {
+    const consent = this.activeConsent(userId);
+    const record = await this.lookup.fetchBvn(consent.sessionId, otp);
+    this.bvnConsents.delete(userId);
+    return { check: await this.storeIdentityCheck(userId, record) };
+  }
+
+  /**
+   * NIN needs no consent leg, and NIN *is* stored in plain text, so this one
+   * is reviewer-initiated from the workspace with no applicant round-trip.
+   */
+  async lookupNin(staffId: string, userId: string) {
+    const profile = await this.getProfileRow(userId);
+    if (!profile.nin) {
+      throw new BadRequestException("This applicant hasn't given a NIN yet");
+    }
+    const record = await this.lookup.lookupNin(profile.nin);
+    await this.storeIdentityCheck(userId, record);
+    await this.db.insert(auditLogs).values({
+      actorStaffId: staffId,
+      action: "kyc.nin_lookup",
+      targetType: "user",
+      targetId: userId,
+    });
+    return this.getForStaff(staffId, userId);
+  }
+
+  /**
+   * Stores the *comparison*, not the record. Everything Mono returned beyond
+   * these few fields — the photo especially — is dropped: we asked whether
+   * the applicant is who they say they are, and that answer is all a
+   * reviewer needs (§13).
+   */
+  private async storeIdentityCheck(userId: string, record: IdentityRecord) {
+    const profile = await this.getProfileRow(userId);
+    const check = matchIdentity(
+      record,
+      {
+        fullName: profile.fullName,
+        dateOfBirth: profile.dateOfBirth,
+        gender: profile.gender,
+        phone: profile.phone,
+        nin: profile.nin,
+      },
+      { live: this.lookup.live },
+    );
+    await this.db
+      .update(applicantProfiles)
+      .set({ identityLookup: check, identityLookupAt: new Date(), updatedAt: new Date() })
+      .where(eq(applicantProfiles.userId, userId));
+    return check;
+  }
+
+  private activeConsent(userId: string) {
+    const consent = this.bvnConsents.get(userId);
+    if (!consent || consent.expiresAt <= Date.now()) {
+      this.bvnConsents.delete(userId);
+      throw new BadRequestException(
+        "That verification session has expired — start again to get a new code.",
+      );
+    }
+    return consent;
   }
 
   async reviewDocument(staffId: string, userId: string, docId: string, input: ReviewDocumentInput) {

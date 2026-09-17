@@ -18,6 +18,7 @@ import {
   type VerificationStatus,
 } from "../../lib/customer";
 import { MonoConnectButton, type BankAnalysis } from "../../components/site/MonoConnectButton";
+import { BvnVerifyCard, type IdentityCheck } from "../../components/site/BvnVerifyCard";
 
 interface CreditProfile {
   totalLimit: number;
@@ -99,6 +100,7 @@ interface KycView {
   rejectedDocs: Array<{ kind: string; rejectionReason: string | null }>;
   bankLinkRequested: boolean;
   bankLinked: boolean;
+  identityChecked: boolean;
 }
 
 export default function AccountPage() {
@@ -110,6 +112,7 @@ export default function AccountPage() {
   const [repayments, setRepayments] = useState<Repayment[] | null>(null);
   const [kyc, setKyc] = useState<KycView | null>(null);
   const [bankLinked, setBankLinked] = useState<BankAnalysis | null>(null);
+  const [identityChecked, setIdentityChecked] = useState<IdentityCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -154,6 +157,7 @@ export default function AccountPage() {
             })),
           bankLinkRequested: !!body?.profile?.bankLinkRequestedAt,
           bankLinked: !!body?.profile?.monoAccountId,
+          identityChecked: !!body?.profile?.identityLookup,
         });
       })
       .catch(() => {});
@@ -248,6 +252,34 @@ export default function AccountPage() {
               </div>
             ) : null}
           </Card>
+
+          {/* Unlike bank linking, this one is self-serve: it's the applicant's
+              own BVN against the national record, it's part of the KYC they
+              already started, and NIBSS asks their permission anyway. Hidden
+              once a check is on file — re-running it is a reviewer's call. */}
+          {kyc && !kyc.identityChecked && !identityChecked && (
+            <BvnVerifyCard onVerified={setIdentityChecked} />
+          )}
+          {identityChecked && (
+            <Card className="mt-6 p-5">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Badge
+                  tone={
+                    identityChecked.verdict === "match"
+                      ? "success"
+                      : identityChecked.verdict === "partial"
+                        ? "warning"
+                        : "error"
+                  }
+                >
+                  {identityChecked.verdict === "match" ? "Identity confirmed" : "Identity checked"}
+                </Badge>
+                {identityChecked.recordName && (
+                  <span className="text-text-muted">{identityChecked.recordName}</span>
+                )}
+              </div>
+            </Card>
+          )}
 
           {/* Only shown once a credit officer has actually asked for it —
               never a self-serve, unprompted "link your bank" ask. */}
