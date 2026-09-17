@@ -7,3 +7,4 @@ export * from "./config.js";
 export * from "./ops.js";
 export * from "./commerce.js";
 export * from "./kyc.js";
+export * from "./inbox.js";

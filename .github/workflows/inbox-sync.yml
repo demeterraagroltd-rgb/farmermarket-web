@@ -1,0 +1,42 @@
+name: Inbox sync
+
+# Pulls new mail from admin@farmermarket.ng into the dashboard every 10
+# minutes. Reuses the collections workflow's repo secrets — same shared
+# cron secret, same API host, nothing new to configure.
+#
+# Setup: uses the existing repo secrets —
+#   COLLECTIONS_API_URL     e.g. https://farmermarket-api-nsjd.onrender.com
+#   COLLECTIONS_CRON_SECRET the same value set on the API's env
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {} # allow a manual run from the Actions tab
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /v1/inbox/sync
+        env:
+          API_URL: ${{ secrets.COLLECTIONS_API_URL }}
+          CRON_SECRET: ${{ secrets.COLLECTIONS_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "COLLECTIONS_API_URL / COLLECTIONS_CRON_SECRET repo secrets are not set." >&2
+            exit 1
+          fi
+          # Render free tier can be cold — one retry after a short wait.
+          for attempt in 1 2; do
+            if curl -fsS --max-time 60 -X POST "$API_URL/v1/inbox/sync" \
+                 -H "x-cron-secret: $CRON_SECRET" \
+                 -H "content-type: application/json" -d '{}' ; then
+              echo
+              echo "inbox sync ok (attempt $attempt)"
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying in 20s" >&2
+            sleep 20
+          done
+          echo "inbox sync failed after 2 attempts" >&2
+          exit 1

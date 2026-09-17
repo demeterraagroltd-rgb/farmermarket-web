@@ -12,6 +12,7 @@ import { KycModule } from "./modules/kyc/kyc.module";
 import { CollectionsModule } from "./modules/collections/collections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { InboxModule } from "./modules/inbox/inbox.module";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     KycModule,
     CollectionsModule,
     ReportsModule,
+    InboxModule,
   ],
 })
 export class AppModule {}

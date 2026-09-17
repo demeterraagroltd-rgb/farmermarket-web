@@ -80,6 +80,30 @@ services:
         sync: false
       - key: MONO_WEBHOOK_SECRET
         sync: false
+      # Inbox — reads and replies to admin@farmermarket.ng inside the
+      # dashboard (§ staff Inbox section). IMAP for receiving, SMTP for
+      # sending; most hosts (Zoho, cPanel, Google Workspace) use the same
+      # user/password for both. Until INBOX_IMAP_HOST is set the inbox stays
+      # empty and replies are refused, same "unset ⇒ off" pattern as every
+      # other integration here. Set these in the Render dashboard once the
+      # mailbox exists.
+      - key: INBOX_IMAP_HOST
+        sync: false
+      - key: INBOX_IMAP_PORT
+        value: "993"
+      - key: INBOX_SMTP_HOST
+        sync: false
+      - key: INBOX_SMTP_PORT
+        value: "465"
+      - key: INBOX_EMAIL_USER
+        value: admin@farmermarket.ng
+      - key: INBOX_EMAIL_PASSWORD
+        sync: false
+      - key: INBOX_EMAIL_FROM
+        value: Farmer Market <admin@farmermarket.ng>
+      # POST /v1/inbox/sync (GitHub Actions cron) reuses the same shared
+      # secret as the collections run — both are machine-triggered, neither
+      # touches the staff table, no need for a second secret.
 
   - type: redis
     name: farmermarket-redis
