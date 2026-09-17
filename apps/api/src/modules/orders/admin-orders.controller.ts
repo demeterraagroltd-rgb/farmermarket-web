@@ -7,6 +7,7 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentStaff, type AuthenticatedStaff } from "../../common/decorators/current-staff.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrdersService } from "./orders.service";
+import { OrderReviewService } from "./order-review.service";
 
 const updateStatusSchema = z.object({
   status: z.enum(["preparing", "on_the_way", "delivered", "cancelled"]),
@@ -27,12 +28,23 @@ const rejectSchema = z.object({
 @Controller("admin/orders")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AdminOrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly orderReviewService: OrderReviewService,
+  ) {}
 
   @Get()
   @Roles("super_admin", "admin", "credit")
   findAll() {
     return this.ordersService.findAllForStaff();
+  }
+
+  // The Order Review / credit-underwriting workspace's single fetch —
+  // applicant, KYC/BVN, Mono, existing credit position, and this order.
+  @Get(":id/review")
+  @Roles("super_admin", "admin", "credit")
+  review(@Param("id") id: string, @CurrentStaff() staff: AuthenticatedStaff) {
+    return this.orderReviewService.getReview(staff.staffId, id);
   }
 
   @Post(":id/approve")

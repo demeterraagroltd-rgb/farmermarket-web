@@ -8,6 +8,7 @@ import { PageHeader, Card } from "../../../../../components/ui/Card";
 import { Badge } from "../../../../../components/ui/Badge";
 import { Button } from "../../../../../components/ui/Button";
 import { Textarea } from "../../../../../components/ui/Field";
+import { TONE, Field, BankAnalysisView, IdentityLookupView, type BankAnalysis } from "../../../../../components/admin/kyc-review";
 
 interface Doc {
   id: string;
@@ -30,122 +31,6 @@ interface Detail {
   };
   documents: Doc[];
   events: Array<{ id: string; fromStatus: string | null; toStatus: string; note: string | null; createdAt: string }>;
-}
-
-const TONE: Record<string, "neutral" | "info" | "success" | "error" | "gold"> = {
-  pending: "gold",
-  accepted: "success",
-  rejected: "error",
-  submitted: "gold",
-  needs_more_info: "error",
-  verified: "success",
-};
-
-function Field({ label, value }: { label: string; value: unknown }) {
-  const v =
-    value == null || value === ""
-      ? "—"
-      : typeof value === "object"
-        ? JSON.stringify(value)
-        : String(value);
-  return (
-    <div className="grid grid-cols-[130px_1fr] gap-2 py-1 text-sm">
-      <span className="text-text-muted">{label}</span>
-      <span className="font-medium text-text-dark">{v}</span>
-    </div>
-  );
-}
-
-interface BankAnalysis {
-  salaryDetected: boolean;
-  estimatedMonthlyIncomeKobo: number | null;
-  incomeConfidence: "high" | "medium" | "low" | null;
-  salaryRegularity: "regular" | "partial" | "irregular" | null;
-  employerNameMatch: boolean | null;
-  monthsAnalysed: number;
-  accountName: string | null;
-  institution: string | null;
-  balanceKobo: number | null;
-  source: "income_api" | "statement" | "unavailable";
-  pulledAt: string;
-}
-
-// The Mono bank-linking result (§9.1). Written by POST /v1/kyc/link-bank;
-// null until the applicant links a salary account in the wizard.
-function BankAnalysisView({
-  userId,
-  analysis,
-  linkedAt,
-  requestedAt,
-  onRequested,
-}: {
-  userId: string;
-  analysis: unknown;
-  linkedAt: string | null | undefined;
-  requestedAt: string | null | undefined;
-  onRequested: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!analysis || typeof analysis !== "object") {
-    // Reviewer-initiated only — no "link your bank" prompt goes to an
-    // applicant unless a credit officer actually asks for it here.
-    async function request() {
-      setBusy(true);
-      setError(null);
-      try {
-        const res = await apiFetch(`/v1/admin/kyc/${userId}/request-bank-link`, { method: "PATCH" });
-        if (!res.ok) throw new Error((await res.json()).message ?? "Failed");
-        onRequested();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed");
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    return (
-      <div className="py-1">
-        {requestedAt ? (
-          <p className="text-sm text-text-muted">
-            Requested {formatDateTime(requestedAt)} — waiting on the applicant.
-          </p>
-        ) : (
-          <>
-            <p className="mb-2 text-sm text-text-muted">No account linked.</p>
-            <Button type="button" variant="secondary" disabled={busy} onClick={request}>
-              {busy ? "Requesting…" : "Request bank verification"}
-            </Button>
-          </>
-        )}
-        {error && <p className="mt-1.5 text-xs text-error">{error}</p>}
-      </div>
-    );
-  }
-  const a = analysis as BankAnalysis;
-  const naira = (kobo: number | null) =>
-    kobo == null ? "—" : `₦${Math.round(kobo / 100).toLocaleString()}`;
-
-  return (
-    <div className="mt-1 rounded-[var(--radius-sm)] border border-dark-border/60 p-3 text-sm">
-      <div className="mb-1.5 flex items-center gap-2">
-        <Badge tone={a.salaryDetected ? "success" : "neutral"}>
-          {a.salaryDetected ? "Salary detected" : "No clear salary"}
-        </Badge>
-        {a.employerNameMatch === true && <Badge tone="success">Employer matches</Badge>}
-        {a.employerNameMatch === false && <Badge tone="error">Employer mismatch</Badge>}
-      </div>
-      <Field label="Est. monthly" value={naira(a.estimatedMonthlyIncomeKobo)} />
-      <Field label="Regularity" value={a.salaryRegularity ?? "—"} />
-      <Field label="Confidence" value={a.incomeConfidence ?? "—"} />
-      <Field label="Bank" value={a.institution ?? "—"} />
-      <Field label="Balance" value={naira(a.balanceKobo)} />
-      <Field label="Months seen" value={a.monthsAnalysed || "—"} />
-      <Field label="Source" value={a.source === "income_api" ? "Mono income" : a.source === "statement" ? "Statement" : "—"} />
-      {linkedAt && <Field label="Linked" value={new Date(linkedAt).toLocaleDateString()} />}
-    </div>
-  );
 }
 
 // The consolidated read a credit officer actually decides from — every
@@ -390,6 +275,14 @@ export default function KycDetailPage() {
             <Field label="Job title" value={p.jobTitle} />
             <Field label="Net monthly salary" value={formatNaira(p.netMonthlySalaryKobo)} />
             <Field label="Requested limit" value={formatNaira(p.requestedLimitKobo)} />
+            <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Identity verification</h3>
+            <IdentityLookupView
+              userId={userId}
+              check={(p as Record<string, unknown>).identityLookup}
+              hasNin={!!(p as Record<string, unknown>).nin}
+              checkedAt={(p as Record<string, unknown>).identityLookupAt as string | null | undefined}
+              onChecked={load}
+            />
             <h3 className="mb-2 mt-4 text-sm font-bold text-text-dark">Bank verification</h3>
             <BankAnalysisView
               userId={userId}

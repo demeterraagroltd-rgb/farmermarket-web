@@ -9,5 +9,6 @@ import { WalletService } from "./wallet.service";
   imports: [AuthModule, LedgerModule],
   controllers: [WalletController, AdminRepaymentsController],
   providers: [WalletService],
+  exports: [WalletService], // OrderReviewService composes a customer's credit position
 })
 export class WalletModule {}

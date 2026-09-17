@@ -247,6 +247,96 @@ export class WalletService {
     return { success: true };
   }
 
+  // ── Staff / dashboard: Order Review workspace ────────────────────────────
+
+  /**
+   * One customer's full credit position — profile + every repayment
+   * schedule across every order they've placed, aged the same way
+   * `listAllRepayments` ages the collections view. Backs the Order Review
+   * workspace's "Existing Credit / Repayment History" section and its
+   * `hasOverdueRepayments` readiness flag.
+   */
+  async getCreditPositionForStaff(userId: string) {
+    const [profile] = await this.db.select().from(creditProfiles).where(eq(creditProfiles.userId, userId)).limit(1);
+    const totalLimitKobo = profile?.creditLimitKobo ?? 0n;
+    const usedKobo = profile?.usedCreditKobo ?? 0n;
+
+    const rows = await this.db
+      .select({
+        id: repaymentSchedules.id,
+        orderId: repaymentSchedules.orderId,
+        amountKobo: repaymentSchedules.amountKobo,
+        amountPaidKobo: repaymentSchedules.amountPaidKobo,
+        dueDate: repaymentSchedules.dueDate,
+        isPaid: repaymentSchedules.isPaid,
+        installmentNumber: repaymentSchedules.installmentNumber,
+        totalInstallments: repaymentSchedules.totalInstallments,
+        bnplPlanName: bnplPlans.name,
+      })
+      .from(repaymentSchedules)
+      .innerJoin(orders, eq(repaymentSchedules.orderId, orders.id))
+      .innerJoin(bnplPlans, eq(orders.bnplPlanId, bnplPlans.id))
+      .where(eq(repaymentSchedules.userId, userId))
+      .orderBy(repaymentSchedules.dueDate);
+
+    const now = new Date();
+    let overdueCount = 0;
+    let totalOverdueKobo = 0n;
+    let totalOutstandingKobo = 0n;
+
+    const schedules = rows.map((r) => {
+      const dueKobo = r.amountKobo - r.amountPaidKobo;
+      const daysPastDue = r.isPaid ? 0 : Math.max(0, Math.floor((now.getTime() - r.dueDate.getTime()) / 86_400_000));
+      const isOverdue = !r.isPaid && r.dueDate < now;
+      const bucket = r.isPaid
+        ? "paid"
+        : daysPastDue === 0
+          ? "current"
+          : daysPastDue <= 30
+            ? "1-30"
+            : daysPastDue <= 60
+              ? "31-60"
+              : "60+";
+
+      if (isOverdue) {
+        overdueCount += 1;
+        totalOverdueKobo += dueKobo;
+      }
+      if (!r.isPaid) totalOutstandingKobo += dueKobo;
+
+      return {
+        id: r.id,
+        orderId: r.orderId,
+        amount: koboToNaira(r.amountKobo),
+        amountPaid: koboToNaira(r.amountPaidKobo),
+        amountDue: koboToNaira(dueKobo),
+        dueDate: r.dueDate,
+        isPaid: r.isPaid,
+        isOverdue,
+        daysPastDue,
+        bucket,
+        installmentNumber: r.installmentNumber,
+        totalInstallments: r.totalInstallments,
+        bnplPlanName: r.bnplPlanName,
+      };
+    });
+
+    return {
+      profile: {
+        totalLimit: koboToNaira(totalLimitKobo),
+        usedAmount: koboToNaira(usedKobo),
+        availableAmount: koboToNaira(totalLimitKobo - usedKobo),
+        tier: profile?.tier ?? "None",
+        score: profile?.score ?? null,
+        isVerified: profile?.isVerified ?? false,
+      },
+      schedules,
+      overdueCount,
+      totalOverdue: koboToNaira(totalOverdueKobo),
+      totalOutstanding: koboToNaira(totalOutstandingKobo),
+    };
+  }
+
   // ── Staff / dashboard: collections ───────────────────────────────────────
 
   async listAllRepayments() {

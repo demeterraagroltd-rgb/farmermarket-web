@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
 import { formatDateTime } from "../../../../lib/format";
@@ -94,16 +95,6 @@ export default function OrdersPage() {
 
   const setStatus = (id: string, status: string) => act(id, "/status", { status }, "PATCH");
 
-  function approve(id: string) {
-    const deliverySlot = window.prompt("Delivery date / slot to tell the buyer (optional)", "") ?? undefined;
-    act(id, "/approve", deliverySlot ? { deliverySlot } : {});
-  }
-  function reject(id: string) {
-    const reason = window.prompt("Why is this order not approved?");
-    if (!reason) return;
-    act(id, "/reject", { reason });
-  }
-
   const visible = useMemo(
     () => (orders ?? []).filter((o) => statusFilter === "all" || o.status === statusFilter),
     [orders, statusFilter],
@@ -182,22 +173,12 @@ export default function OrdersPage() {
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {o.status === "pending_approval" ? (
-                  <>
-                    <button
-                      disabled={busyId === o.id}
-                      onClick={() => approve(o.id)}
-                      className="rounded-[var(--radius-sm)] bg-primary px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      disabled={busyId === o.id}
-                      onClick={() => reject(o.id)}
-                      className="rounded-[var(--radius-sm)] border border-error/40 px-3 py-1 text-xs font-semibold text-error hover:bg-error/5 disabled:opacity-50"
-                    >
-                      Reject
-                    </button>
-                  </>
+                  <Link
+                    href={`/dashboard/orders/${o.id}/review`}
+                    className="rounded-[var(--radius-sm)] bg-primary px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-dark"
+                  >
+                    Review →
+                  </Link>
                 ) : o.status === "rejected" || o.status === "delivered" || o.status === "cancelled" ? null : (
                   <>
                     <span className="text-xs text-text-muted">Move to:</span>

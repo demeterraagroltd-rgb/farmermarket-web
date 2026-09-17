@@ -97,6 +97,36 @@ export class OrdersService {
     );
   }
 
+  /** Single-order staff read — the Order Review workspace's base fetch. */
+  async findOneForStaff(orderId: string) {
+    const [row] = await this.db
+      .select({
+        order: orders,
+        buyerName: users.fullName,
+        buyerPhone: users.phone,
+        buyerEmail: users.email,
+        plan: bnplPlans,
+      })
+      .from(orders)
+      .leftJoin(users, eq(orders.userId, users.id))
+      .leftJoin(bnplPlans, eq(orders.bnplPlanId, bnplPlans.id))
+      .where(eq(orders.id, orderId))
+      .limit(1);
+    if (!row) throw new NotFoundException("Order not found");
+
+    const items = await this.db.select().from(orderItems).where(eq(orderItems.orderId, row.order.id));
+    return {
+      ...this.toResponse(row.order, items),
+      userId: row.order.userId,
+      totalKobo: row.order.totalKobo, // internal — OrderReviewService needs the exact kobo figure for the preview schedule
+      buyerName: row.buyerName ?? null,
+      buyerPhone: row.buyerPhone ?? null,
+      buyerEmail: row.buyerEmail ?? null,
+      bnplPlanName: row.plan?.name ?? null,
+      bnplPlan: row.plan ?? null,
+    };
+  }
+
   // Post-approval lifecycle only (preparing → on_the_way → delivered,
   // cancelled). Entering `confirmed`/`rejected` goes through approve()/reject();
   // `pending_approval` is only ever set at creation.
@@ -209,6 +239,15 @@ export class OrdersService {
       const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
       if (!plan) throw new BadRequestException("Order's plan no longer exists");
 
+      // Re-check at approval time, not just at checkout (create() already
+      // gates on this, but a profile can regress to needs_more_info in
+      // between) — this is the hard "Verification Required" gate the Order
+      // Review workspace's Approve button also enforces client-side.
+      const status = await this.kyc.getVerificationStatus(order.userId);
+      if (status !== "verified") {
+        throw new BadRequestException("Applicant is not verified — verification is required before approval");
+      }
+
       let [profile] = await tx.select().from(creditProfiles).where(eq(creditProfiles.userId, order.userId)).limit(1);
       if (!profile) {
         [profile] = await tx
@@ -286,33 +325,48 @@ export class OrdersService {
     return { ...response, userId: order.userId };
   }
 
-  private async createRepaymentSchedule(
-    tx: Tx,
-    order: typeof orders.$inferSelect,
-    plan: typeof bnplPlans.$inferSelect,
-    userId: string,
-  ) {
+  /**
+   * The installment math shared by the real schedule (`createRepaymentSchedule`,
+   * written on approval) and the read-only preview shown on a still-pending
+   * order (`previewInstallments`, below) — same numbers, one place they can
+   * drift out of sync.
+   */
+  private buildInstallments(totalKobo: bigint, plan: typeof bnplPlans.$inferSelect) {
     const installments = plan.durationMonths === 0 ? 1 : plan.durationMonths;
-    const totalWithFee = order.totalKobo + percentOfKobo(order.totalKobo, plan.interestPercent);
+    const totalWithFee = totalKobo + percentOfKobo(totalKobo, plan.interestPercent);
     const base = totalWithFee / BigInt(installments);
     const remainder = totalWithFee - base * BigInt(installments);
 
-    const rows = Array.from({ length: installments }, (_, i) => {
+    return Array.from({ length: installments }, (_, i) => {
       const n = i + 1;
       const amountKobo = n === installments ? base + remainder : base; // remainder absorbed by the last installment
       const dueDate =
         plan.durationMonths === 0
           ? new Date() // Pay Now — due immediately
           : new Date(Date.now() + n * 30 * DAY_MS);
-      return {
-        orderId: order.id,
-        userId,
-        installmentNumber: n,
-        totalInstallments: installments,
-        amountKobo,
-        dueDate,
-      };
+      return { installmentNumber: n, totalInstallments: installments, amountKobo, dueDate };
     });
+  }
+
+  /** Order Review workspace: what the schedule *would* look like on approval. */
+  previewInstallments(totalKobo: bigint, plan: typeof bnplPlans.$inferSelect) {
+    return this.buildInstallments(totalKobo, plan).map((i) => ({
+      ...i,
+      amount: koboToNaira(i.amountKobo),
+    }));
+  }
+
+  private async createRepaymentSchedule(
+    tx: Tx,
+    order: typeof orders.$inferSelect,
+    plan: typeof bnplPlans.$inferSelect,
+    userId: string,
+  ) {
+    const rows = this.buildInstallments(order.totalKobo, plan).map((i) => ({
+      ...i,
+      orderId: order.id,
+      userId,
+    }));
 
     await tx.insert(repaymentSchedules).values(rows);
   }
