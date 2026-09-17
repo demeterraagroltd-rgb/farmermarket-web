@@ -13,14 +13,14 @@ interface EmailInput {
  * lands) it logs the message and returns — no flow is ever blocked by email.
  *
  * Every message carries a `reply_to` (default `EMAIL_REPLY_TO`, falling back to
- * admin@demeterra.ng) so a customer hitting "reply" reaches a monitored inbox
+ * admin@farmermarket.ng) so a customer hitting "reply" reaches a monitored inbox
  * rather than the unattended `from` address.
  */
 @Injectable()
 export class EmailService {
   private readonly log = new Logger(EmailService.name);
-  private readonly from = process.env.EMAIL_FROM ?? "Demeterra <noreply@demeterra.ng>";
-  private readonly replyTo = process.env.EMAIL_REPLY_TO ?? "admin@demeterra.ng";
+  private readonly from = process.env.EMAIL_FROM ?? "Demeterra <noreply@farmermarket.ng>";
+  private readonly replyTo = process.env.EMAIL_REPLY_TO ?? "admin@farmermarket.ng";
 
   async send({ to, subject, html, replyTo }: EmailInput): Promise<void> {
     if (!to) return;

@@ -52,11 +52,11 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
-        value: Demeterra <noreply@demeterra.ng>
+        value: Demeterra <noreply@farmermarket.ng>
       # Where customer replies land — a monitored inbox, not the unattended
       # `from` address.
       - key: EMAIL_REPLY_TO
-        value: admin@demeterra.ng
+        value: admin@farmermarket.ng
       # Termii — SMS for Sign Up phone verification. Set the key in the Render
       # dashboard. Until it's set the OTP endpoints still work but log the
       # code instead of texting it, so registration can't be tested with a

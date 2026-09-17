@@ -4,7 +4,7 @@
 function wrap(body: string): string {
   return `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:15px;color:#0D2119;line-height:1.6">
 ${body}
-<p style="margin-top:24px;color:#7A9D8C;font-size:13px">— Demeterra · reply to this email and it reaches us at admin@demeterra.ng</p>
+<p style="margin-top:24px;color:#7A9D8C;font-size:13px">— Demeterra · reply to this email and it reaches us at admin@farmermarket.ng</p>
 </div>`;
 }
 
