@@ -18,6 +18,7 @@ import {
   type Db,
 } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
+import { decryptSecretOrNull, encryptSecret, hasEncryptionKey } from "../../common/crypto/reversible-secret";
 import { JwtService } from "@nestjs/jwt";
 import {
   destroyAsset,
@@ -40,11 +41,14 @@ import type { RegisterInput, UpdateKycInput, ReviewDocumentInput, VerifyKycInput
 const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
 
 // A profile is ready to submit for verification once these are present.
-// NIN and employment docs are deliberately deferrable (§ user's brief).
+// NIN used to be deferrable; it no longer is — Mashup needs it alongside the
+// BVN for the no-consent identity check, so it's required from here on.
+// Employment docs stay deferrable (§ user's brief).
 const REQUIRED_PROFILE_FIELDS: (keyof typeof applicantProfiles.$inferSelect)[] = [
   "fullName",
   "dateOfBirth",
   "bvnHash",
+  "nin",
   "residentialAddress",
   "stateOfOrigin",
   "lgaOfOrigin",
@@ -197,6 +201,11 @@ export class KycService {
       });
     });
     void this.email.send({ to: profile.email, ...emails.verificationSubmitted(profile.fullName) });
+    // Fire-and-forget: BVN + NIN + DOB are all freshly on file the moment
+    // submission succeeds, so this is the best chance to check them without
+    // making the applicant wait on it. Never awaited into the response —
+    // see autoVerifyIdentityOnSubmit for why it can't fail this call.
+    void this.autoVerifyIdentityOnSubmit(userId);
     return this.getMyKyc(userId);
   }
 
@@ -455,6 +464,57 @@ export class KycService {
   }
 
   /**
+   * The no-consent identity check an admin can run any time, with the
+   * applicant not present — e.g. their code-based check failed, they can't
+   * get through it, or the reviewer just wants to (re)confirm before a
+   * decision. Needs a decryptable BVN (see toProfileWrite/BVN_ENCRYPTION_KEY)
+   * plus the NIN and date of birth already on file.
+   */
+  async verifyBvnNinMashup(staffId: string, userId: string) {
+    const profile = await this.getProfileRow(userId);
+    const bvn = decryptSecretOrNull(profile.bvnEncrypted);
+    if (!bvn) {
+      throw new BadRequestException(
+        hasEncryptionKey()
+          ? "No recoverable BVN on file for this applicant — it was saved before this check existed, or the applicant hasn't given one. Ask them to re-enter their BVN, or use the applicant's own approval-code check."
+          : "BVN_ENCRYPTION_KEY isn't configured on this environment, so no BVN can be recovered for this check.",
+      );
+    }
+    if (!profile.nin) throw new BadRequestException("This applicant hasn't given a NIN yet");
+    if (!profile.dateOfBirth) throw new BadRequestException("This applicant hasn't given a date of birth yet");
+
+    const record = await this.lookup.mashup(bvn, profile.nin, profile.dateOfBirth);
+    await this.storeIdentityCheck(userId, record);
+    await this.db.insert(auditLogs).values({
+      actorStaffId: staffId,
+      action: "kyc.mashup_lookup",
+      targetType: "user",
+      targetId: userId,
+    });
+    return this.getForStaff(staffId, userId);
+  }
+
+  /**
+   * Same check, run automatically the moment a profile is submitted — while
+   * BVN, NIN and DOB are all freshly on file, before anyone waits on a
+   * reviewer. Never blocks the submission: a down NIBSS, an unconfigured
+   * key, or a genuine mismatch all just leave `identityLookup` unset, same
+   * as if nobody had run a check yet, and a reviewer can retry by hand.
+   */
+  private async autoVerifyIdentityOnSubmit(userId: string): Promise<void> {
+    const profile = await this.getProfileRow(userId);
+    const bvn = decryptSecretOrNull(profile.bvnEncrypted);
+    if (!bvn || !profile.nin || !profile.dateOfBirth) return;
+    try {
+      const record = await this.lookup.mashup(bvn, profile.nin, profile.dateOfBirth);
+      await this.storeIdentityCheck(userId, record);
+    } catch {
+      // Swallow — a reviewer sees "not checked yet" and can retry from the
+      // workspace; the applicant's submission must not fail because of this.
+    }
+  }
+
+  /**
    * Stores the *comparison*, not the record. Everything Mono returned beyond
    * these few fields — the photo especially — is dropped: we asked whether
    * the applicant is who they say they are, and that answer is all a
@@ -613,6 +673,10 @@ export class KycService {
     if (input.bvn !== undefined) {
       w.bvnHash = await argon2.hash(input.bvn, { type: argon2.argon2id });
       w.bvnLast4 = input.bvn.slice(-4);
+      // Additive: the hash above stays primary. Only set when a key exists,
+      // so an unconfigured environment just leaves this column null instead
+      // of throwing on every profile save.
+      if (hasEncryptionKey()) w.bvnEncrypted = encryptSecret(input.bvn);
     }
     if (input.nin !== undefined) w.nin = input.nin;
     if (input.residentialAddress !== undefined) w.residentialAddress = input.residentialAddress;
@@ -636,6 +700,7 @@ export class KycService {
       fullName: "your full name",
       dateOfBirth: "your date of birth",
       bvnHash: "your BVN",
+      nin: "your NIN",
       residentialAddress: "your residential address",
       stateOfOrigin: "your state of origin",
       lgaOfOrigin: "your LGA of origin",
@@ -644,8 +709,12 @@ export class KycService {
   }
 
   private publicProfile(p: typeof applicantProfiles.$inferSelect) {
-    const { bvnHash, bvnLast4, verifiedByStaffId, ...rest } = p;
-    return { ...rest, hasBvn: !!bvnHash };
+    // bvnEncrypted never leaves the server, even to an admin — it decrypts
+    // to a real BVN, so it gets the same treatment as bvnHash. Reviewers
+    // get bvnMashupAvailable, a yes/no on whether the no-consent check can
+    // run, not the value that check runs on.
+    const { bvnHash, bvnLast4, bvnEncrypted, verifiedByStaffId, ...rest } = p;
+    return { ...rest, hasBvn: !!bvnHash, bvnMashupAvailable: decryptSecretOrNull(bvnEncrypted) !== null };
   }
 
   private publicDoc(d: typeof kycDocuments.$inferSelect) {

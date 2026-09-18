@@ -35,7 +35,10 @@ export const kycProfileFields = {
   maritalStatus: z.enum(["single", "married", "divorced", "widowed"]).optional(),
   dependantsCount: z.number().int().min(0).max(30).optional(),
   bvn: z.string().regex(/^\d{11}$/, "BVN must be 11 digits").optional(),
-  nin: z.string().regex(/^\d{11}$/, "NIN must be 11 digits").optional(), // deferrable
+  // Optional here (this schema also backs partial PATCH /kyc/me updates) —
+  // required by the time of POST /kyc/submit, enforced in
+  // KycService.REQUIRED_PROFILE_FIELDS, same pattern as bvn below.
+  nin: z.string().regex(/^\d{11}$/, "NIN must be 11 digits").optional(),
   email: z.string().email().optional(),
   residentialAddress: addressSchema.optional(),
   stateOfOrigin: z.string().min(1).optional(),
@@ -82,7 +85,7 @@ export class RegisterDto {
   @ApiPropertyOptional() maritalStatus?: string;
   @ApiPropertyOptional() dependantsCount?: number;
   @ApiPropertyOptional({ description: "11-digit BVN" }) bvn?: string;
-  @ApiPropertyOptional({ description: "11-digit NIN (may be added later)" }) nin?: string;
+  @ApiPropertyOptional({ description: "11-digit NIN — required by submission time" }) nin?: string;
   @ApiPropertyOptional({ type: Object }) residentialAddress?: unknown;
   @ApiPropertyOptional() stateOfOrigin?: string;
   @ApiPropertyOptional() lgaOfOrigin?: string;

@@ -4,9 +4,8 @@
 // usually a different app in the Mono dashboard, hence its own key
 // (MONO_LOOKUP_SECRET_KEY). Never exposed to a client.
 //
-// BVN is a three-legged consent flow, not a single call: the BVN holder has
-// to approve the disclosure with an OTP sent to a contact NIBSS already has
-// on file. NIN is a single call with no consent step.
+// BVN normally needs a three-legged consent flow: the BVN holder approves
+// the disclosure with an OTP sent to a contact NIBSS already has on file.
 //
 //   initiateBvn(bvn)  → session + the contact methods NIBSS will send to
 //   sendBvnOtp(...)   → dispatches the code to the chosen method
@@ -14,6 +13,10 @@
 //
 // The session is server-side only (see KycService): handing it to a browser
 // would let a caller finish someone else's consent from another session.
+//
+// NIN is a single call with no consent step, and `mashup` checks BVN + NIN
+// + date of birth together with no consent step either — that's the route
+// an admin uses when the applicant can't be there to enter an OTP.
 
 export const LOOKUP_CLIENT = Symbol("LOOKUP_CLIENT");
 
@@ -32,7 +35,7 @@ export interface BvnSession {
 
 /** The subset of a government record we're willing to hold, normalised. */
 export interface IdentityRecord {
-  source: "bvn" | "nin";
+  source: "bvn" | "nin" | "mashup";
   firstName: string | null;
   lastName: string | null;
   middleName: string | null;
@@ -62,4 +65,13 @@ export interface LookupClient {
 
   /** Single-call NIN lookup — no consent leg. */
   lookupNin(nin: string): Promise<IdentityRecord>;
+
+  /**
+   * BVN + NIN + date of birth in one call, no OTP — the no-consent path an
+   * admin can run without the applicant present. Cross-checks all three
+   * against each other server-side at Mono, so a passing result is
+   * stronger evidence than either lookup alone, not weaker: it only
+   * succeeds when the three actually belong to the same person.
+   */
+  mashup(bvn: string, nin: string, dateOfBirth: string): Promise<IdentityRecord>;
 }

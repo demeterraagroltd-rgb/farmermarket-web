@@ -87,6 +87,13 @@ services:
       # production quietly runs identity checks against canned data.
       - key: MONO_LOOKUP_SECRET_KEY
         sync: false
+      # BVN encryption — the no-consent admin identity check (BVN + NIN +
+      # date of birth, no OTP). Must be the SAME value used wherever else
+      # this database is written to (see apps/api/.env.example for how to
+      # generate one) — a BVN encrypted under one key can't be decrypted
+      # under another. Unset ⇒ that check just isn't offered.
+      - key: BVN_ENCRYPTION_KEY
+        sync: false
       # Inbox — reads and replies to admin@farmermarket.ng inside the
       # dashboard (§ staff Inbox section). IMAP for receiving, SMTP for
       # sending; most hosts (Zoho, cPanel, Google Workspace) use the same

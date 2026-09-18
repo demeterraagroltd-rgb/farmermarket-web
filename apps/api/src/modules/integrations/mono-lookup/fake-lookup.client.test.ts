@@ -59,4 +59,27 @@ describe("FakeLookupClient", () => {
     expect(fromNin.dateOfBirth).toBe(fromBvn.dateOfBirth);
     expect(fromNin.source).toBe("nin");
   });
+
+  it("mashup succeeds with no OTP when BVN, NIN and DOB all match", async () => {
+    const c = new FakeLookupClient();
+    const record = await c.mashup(bvn, "22222222222", "1992-04-28");
+    expect(record.source).toBe("mashup");
+    expect(record.lastName).toBe("OKONKWO");
+  });
+
+  it("mashup fails outright — no partial record — on any mismatch", async () => {
+    const c = new FakeLookupClient();
+    await expect(c.mashup(bvn, "22222222222", "2000-01-01")).rejects.toThrow(
+      /don't all belong to the same record/i,
+    );
+    await expect(c.mashup(bvn, "11111111111", "1992-04-28")).rejects.toThrow(
+      /don't all belong to the same record/i,
+    );
+  });
+
+  it("mashup validates BVN and NIN shape before checking a match", async () => {
+    const c = new FakeLookupClient();
+    await expect(c.mashup("123", "22222222222", "1992-04-28")).rejects.toThrow(/11 digits/);
+    await expect(c.mashup(bvn, "abc", "1992-04-28")).rejects.toThrow(/11 digits/);
+  });
 });

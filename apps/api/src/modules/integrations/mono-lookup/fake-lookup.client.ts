@@ -60,7 +60,26 @@ export class FakeLookupClient implements LookupClient {
     return this.record("nin");
   }
 
-  private record(source: "bvn" | "nin"): IdentityRecord {
+  /**
+   * The real endpoint cross-checks all three server-side and fails outright
+   * on any mismatch — no partial result. Mirror that: only ADA's own BVN,
+   * NIN and DOB together succeed here, so the failure path is exercisable
+   * offline too, not just the happy path.
+   */
+  async mashup(bvn: string, nin: string, dateOfBirth: string): Promise<IdentityRecord> {
+    if (!/^\d{11}$/.test(bvn)) throw new BadRequestException("Mono Lookup: BVN must be 11 digits");
+    if (!/^\d{11}$/.test(nin)) throw new BadRequestException("Mono Lookup: NIN must be 11 digits");
+    const fake = this.record("mashup");
+    if (nin !== fake.nin || dateOfBirth !== fake.dateOfBirth) {
+      throw new BadRequestException(
+        "Mono Lookup: the BVN, NIN and date of birth don't all belong to the same record",
+      );
+    }
+    this.log.log(`[lookup:fake] mashup(•••${bvn.slice(-4)}, •••${nin.slice(-4)}) → match`);
+    return fake;
+  }
+
+  private record(source: "bvn" | "nin" | "mashup"): IdentityRecord {
     return {
       source,
       firstName: "ADA",

@@ -54,12 +54,21 @@ export class AdminKycController {
   }
 
   // NIN carries no consent leg and is stored in plain text, so a reviewer
-  // runs it straight from the workspace — no applicant round-trip. BVN can't
-  // work this way: we only hold a hash of it, and NIBSS wants the holder's
-  // OTP, so that flow lives on the applicant's side (POST /v1/kyc/bvn-lookup/*).
+  // runs it straight from the workspace — no applicant round-trip.
   @Post(":userId/nin-lookup")
   ninLookup(@CurrentStaff() staff: AuthenticatedStaff, @Param("userId") userId: string) {
     return this.kyc.lookupNin(staff.staffId, userId);
+  }
+
+  // The no-consent BVN+NIN+DOB check (Mashup) — the fallback for when the
+  // applicant's own approval-code check isn't an option: they're not around,
+  // NIBSS is down for them, or a reviewer just wants to (re)confirm before a
+  // decision. Runs automatically at submission too (KycService); this is
+  // for re-running it. Needs a decryptable BVN — see
+  // KycService.verifyBvnNinMashup for what happens when there isn't one.
+  @Post(":userId/bvn-nin-lookup")
+  bvnNinLookup(@CurrentStaff() staff: AuthenticatedStaff, @Param("userId") userId: string) {
+    return this.kyc.verifyBvnNinMashup(staff.staffId, userId);
   }
 
   // Reviewer-initiated bank linking — see KycService.requestBankLink.

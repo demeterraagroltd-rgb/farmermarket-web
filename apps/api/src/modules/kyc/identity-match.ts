@@ -7,7 +7,7 @@ import type { IdentityRecord } from "../integrations/mono-lookup/lookup.types";
 // the per-row bank verification panel).
 export interface IdentityCheck {
   checkedAt: string;
-  source: "bvn" | "nin";
+  source: "bvn" | "nin" | "mashup";
   /** False when a fake client produced this — the reviewer must not trust it. */
   live: boolean;
   /** The name on the government record, for a human to eyeball. */

@@ -129,7 +129,7 @@ export function BankAnalysisView({
 // can run unaided because the NIN is stored in plain text and NIN carries no
 // consent leg. BVN can't work from this side: we hold only a hash of it.
 export interface IdentityCheck {
-  source: "bvn" | "nin";
+  source: "bvn" | "nin" | "mashup";
   live: boolean;
   recordName: string | null;
   nameMatch: "exact" | "partial" | "mismatch";
@@ -145,6 +145,7 @@ export function IdentityLookupView({
   check,
   hasNin,
   bvnLast4,
+  bvnMashupAvailable,
   checkedAt,
   onChecked,
 }: {
@@ -153,30 +154,45 @@ export function IdentityLookupView({
   hasNin: boolean;
   /** Last 4 of the BVN on file — the full number is only ever stored hashed. */
   bvnLast4: string | null | undefined;
+  /** Whether a BVN is on file in a form the no-consent check can use. */
+  bvnMashupAvailable: boolean;
   checkedAt: string | null | undefined;
   onChecked: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"nin" | "mashup" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function runNin() {
-    setBusy(true);
+  async function run(kind: "nin" | "mashup", path: string) {
+    setBusy(kind);
     setError(null);
     try {
-      const res = await apiFetch(`/v1/admin/kyc/${userId}/nin-lookup`, { method: "POST" });
+      const res = await apiFetch(`/v1/admin/kyc/${userId}/${path}`, { method: "POST" });
       if (!res.ok) throw new Error((await res.json()).message ?? "Failed");
       onChecked();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   const c = check as IdentityCheck | null;
   const ninButton = (
-    <Button type="button" variant="secondary" disabled={busy || !hasNin} onClick={runNin}>
-      {busy ? "Checking…" : c ? "Re-check against NIN" : "Verify NIN"}
+    <Button type="button" variant="secondary" disabled={!!busy || !hasNin} onClick={() => run("nin", "nin-lookup")}>
+      {busy === "nin" ? "Checking…" : c ? "Re-check against NIN" : "Verify NIN"}
+    </Button>
+  );
+  // No-consent fallback: BVN + NIN + date of birth cross-checked at Mono,
+  // no code from the applicant needed. Also what runs automatically at
+  // submission — this button is for retrying that, or running it fresh.
+  const mashupButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      disabled={!!busy || !bvnMashupAvailable || !hasNin}
+      onClick={() => run("mashup", "bvn-nin-lookup")}
+    >
+      {busy === "mashup" ? "Checking…" : c?.source === "mashup" ? "Re-check BVN + NIN" : "Verify BVN + NIN"}
     </Button>
   );
 
@@ -195,14 +211,6 @@ export function IdentityLookupView({
             <span className="text-text-muted">not provided</span>
           )}
         </p>
-        {bvnLast4 && (
-          // A reviewer can't run this one: we only hold a hash of the BVN,
-          // and NIBSS needs the holder's own approval code.
-          <p className="text-xs text-text-muted">
-            The applicant verifies their BVN from their account page — it needs a code only they
-            receive, so it can&apos;t be run from here.
-          </p>
-        )}
         <p className="mt-1 text-text-dark">
           <span className="text-text-muted">NIN: </span>
           {hasNin ? (
@@ -213,7 +221,26 @@ export function IdentityLookupView({
             <span className="text-text-muted">not provided</span>
           )}
         </p>
-        {hasNin && <div className="mt-1">{ninButton}</div>}
+        {bvnLast4 && hasNin && (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {mashupButton}
+            {ninButton}
+          </div>
+        )}
+        {bvnLast4 && hasNin && !bvnMashupAvailable && (
+          <p className="text-xs text-text-muted">
+            The BVN on file can&apos;t be recovered for this check — it was saved before this
+            feature existed, or under a since-rotated key. Ask the applicant to re-enter their
+            BVN, or have them run their own approval-code check from their account page.
+          </p>
+        )}
+        {bvnLast4 && !hasNin && (
+          <p className="text-xs text-text-muted">
+            No NIN on file yet — the no-consent check needs both. The applicant can still verify
+            their BVN alone from their account page.
+          </p>
+        )}
+        {!bvnLast4 && hasNin && <div className="mt-1">{ninButton}</div>}
         {error && <p className="mt-1.5 text-xs text-error">{error}</p>}
       </div>
     );
@@ -227,7 +254,9 @@ export function IdentityLookupView({
         <Badge tone={c.verdict === "match" ? "success" : c.verdict === "partial" ? "warning" : "error"}>
           {c.verdict === "match" ? "Identity match" : c.verdict === "partial" ? "Partial match" : "Mismatch"}
         </Badge>
-        <Badge tone="neutral">{c.source.toUpperCase()}</Badge>
+        <Badge tone="neutral">
+          {c.source === "bvn" ? "BVN" : c.source === "nin" ? "NIN" : "BVN + NIN"}
+        </Badge>
         {/* A fake-client result must never read as an independent check. */}
         {!c.live && <Badge tone="warning">Sandbox — not verified</Badge>}
       </div>
@@ -238,7 +267,15 @@ export function IdentityLookupView({
       <Field label="Phone" value={yesNo(c.phoneMatch)} />
       <Field label="NIN corroborated" value={yesNo(c.ninCorroborated)} />
       {checkedAt && <Field label="Checked" value={formatDateTime(checkedAt)} />}
-      <div className="mt-2">{ninButton}</div>
+      {c.source === "mashup" && (
+        <p className="mt-1 text-xs text-text-muted">
+          Checked automatically when submitted, or by a reviewer — no code from the applicant.
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap gap-2">
+        {bvnMashupAvailable && hasNin && mashupButton}
+        {hasNin && ninButton}
+      </div>
       {error && <p className="mt-1.5 text-xs text-error">{error}</p>}
     </div>
   );

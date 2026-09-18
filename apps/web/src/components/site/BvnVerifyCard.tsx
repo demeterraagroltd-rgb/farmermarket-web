@@ -15,7 +15,7 @@ import { accountFetch, readError } from "../../lib/customer";
 // to, so the steps are ours to render.
 
 export interface IdentityCheck {
-  source: "bvn" | "nin";
+  source: "bvn" | "nin" | "mashup";
   live: boolean;
   recordName: string | null;
   nameMatch: "exact" | "partial" | "mismatch";

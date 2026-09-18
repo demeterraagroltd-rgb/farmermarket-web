@@ -568,11 +568,12 @@ export default function ApplyPage() {
                     required
                   />
                   <Input
-                    label="NIN (optional — you can add this later)"
+                    label="NIN"
                     inputMode="numeric"
                     maxLength={11}
                     value={form.nin}
                     onChange={(e) => update("nin", e.target.value.replace(/\D/g, ""))}
+                    required
                   />
                 </>
               )}

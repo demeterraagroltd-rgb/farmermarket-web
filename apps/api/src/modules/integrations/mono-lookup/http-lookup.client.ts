@@ -131,12 +131,27 @@ export class HttpLookupClient implements LookupClient {
   }
 
   /**
-   * Both products return the same person in slightly different clothes
+   * No consent leg: Mono/NIBSS cross-check the BVN, NIN and date of birth
+   * against each other server-side, so this either confirms all three
+   * belong to one person or fails outright — there's no "partial" result
+   * to normalise, unlike the OTP-based BVN details call.
+   */
+  async mashup(bvn: string, nin: string, dateOfBirth: string): Promise<IdentityRecord> {
+    const data = await this.call<Record<string, unknown>>("/v3/lookup/mashup", {
+      bvn,
+      nin,
+      date_of_birth: dateOfBirth,
+    });
+    return this.toRecord(data, "mashup");
+  }
+
+  /**
+   * All three products return the same person in slightly different clothes
    * (`first_name` vs `firstName`, `dob` vs `date_of_birth`), so read every
    * spelling. Deliberately drops everything else Mono sends — the base64
    * photo especially, which has no place in a JSONB review column.
    */
-  private toRecord(d: Record<string, unknown>, source: "bvn" | "nin"): IdentityRecord {
+  private toRecord(d: Record<string, unknown>, source: "bvn" | "nin" | "mashup"): IdentityRecord {
     const pick = (...keys: string[]): string | null => {
       for (const k of keys) {
         const v = str(d[k]);

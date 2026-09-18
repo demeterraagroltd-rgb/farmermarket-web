@@ -39,7 +39,13 @@ export const applicantProfiles = pgTable("applicant_profiles", {
   dependantsCount: smallint("dependants_count"),
   bvnHash: text("bvn_hash"),
   bvnLast4: char("bvn_last4", { length: 4 }),
-  nin: text("nin"), // deferrable — plaintext acceptable pre-KMS, revisit (§13)
+  // AES-256-GCM under BVN_ENCRYPTION_KEY (apps/api/src/common/crypto), so an
+  // admin can run the no-consent Mashup identity check without the applicant
+  // present. The hash above stays the primary store and the one used to
+  // confirm "this is the BVN you declared" — this is additive, and null on
+  // every row written before BVN_ENCRYPTION_KEY existed.
+  bvnEncrypted: text("bvn_encrypted"),
+  nin: text("nin"), // now required at submission (kyc.service REQUIRED_PROFILE_FIELDS) — Mashup needs it alongside the BVN
 
   // Contact / where they live and are from
   phone: text("phone").notNull(),

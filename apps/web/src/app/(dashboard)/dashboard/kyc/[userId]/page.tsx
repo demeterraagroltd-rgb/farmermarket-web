@@ -25,6 +25,7 @@ interface Detail {
     verificationStatus: string;
     verificationNote: string | null;
     bvnLast4: string | null;
+    bvnMashupAvailable: boolean;
     netMonthlySalaryKobo: string | null;
     requestedLimitKobo: string | null;
     bankAnalysis: BankAnalysis | null;
@@ -281,6 +282,7 @@ export default function KycDetailPage() {
               check={(p as Record<string, unknown>).identityLookup}
               hasNin={!!(p as Record<string, unknown>).nin}
               bvnLast4={p.bvnLast4}
+              bvnMashupAvailable={p.bvnMashupAvailable}
               checkedAt={(p as Record<string, unknown>).identityLookupAt as string | null | undefined}
               onChecked={load}
             />

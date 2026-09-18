@@ -95,6 +95,7 @@ interface Review {
       verificationStatus: string;
       verificationNote: string | null;
       bvnLast4: string | null;
+    bvnMashupAvailable: boolean;
       netMonthlySalaryKobo: string | null;
       requestedLimitKobo: string | null;
     };
@@ -277,6 +278,7 @@ export default function OrderReviewPage() {
               check={p.identityLookup}
               hasNin={!!p.nin}
               bvnLast4={p.bvnLast4}
+              bvnMashupAvailable={p.bvnMashupAvailable}
               checkedAt={p.identityLookupAt as string | null | undefined}
               onChecked={load}
             />
