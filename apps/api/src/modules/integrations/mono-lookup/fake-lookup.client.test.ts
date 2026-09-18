@@ -11,7 +11,9 @@ describe("FakeLookupClient", () => {
     const c = new FakeLookupClient();
     const { sessionId, methods } = await c.initiateBvn(bvn);
     expect(sessionId).toMatch(/^sess_fake_/);
-    expect(methods.map((m) => m.method)).toContain("alternate_phone");
+    expect(methods.map((m) => m.method)).toEqual(
+      expect.arrayContaining(["phone", "email", "alternate_phone"]),
+    );
 
     await c.sendBvnOtp(sessionId, "phone");
     const record = await c.fetchBvn(sessionId, FAKE_LOOKUP_OTP);

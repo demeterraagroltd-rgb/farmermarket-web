@@ -26,8 +26,13 @@ export class FakeLookupClient implements LookupClient {
     this.log.log(`[lookup:fake] initiateBvn(•••${bvn.slice(-4)}) → ${sessionId}`);
     return {
       sessionId,
+      // Mirrors the real mix NIBSS can offer: an email on file (common, and
+      // the only route while no SMS provider is live on our side — NIBSS
+      // sends these codes itself, not Termii), a phone on file, and a
+      // holder-nominated number.
       methods: [
         { method: "phone", hint: "OTP will be sent to 080•••••12" },
+        { method: "email", hint: "OTP will be sent to ad•••@gmail.com" },
         { method: "alternate_phone", hint: "Send to a number you nominate" },
       ],
     };

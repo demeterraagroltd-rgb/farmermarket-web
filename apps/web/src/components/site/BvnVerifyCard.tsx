@@ -39,12 +39,25 @@ const VERDICT_COPY: Record<IdentityCheck["verdict"], string> = {
   mismatch: "The details didn't match. A credit officer will be in touch.",
 };
 
+// NIBSS decides which contacts it will use — we can only order and label
+// them. Email goes first: it works for everyone regardless of network, and
+// until our own SMS provider is live it's the route we can best support.
+const METHOD_ORDER = (m: string) =>
+  m.includes("email") ? 0 : m === "alternate_phone" ? 2 : 1;
+
+function methodLabel(m: OtpMethod): string {
+  if (m.method.includes("email")) return m.hint ? `Email — ${m.hint}` : "Send to my email on file";
+  if (m.method === "alternate_phone") return "Send to a phone number I choose";
+  return m.hint ? `SMS — ${m.hint}` : "Send to my phone on file";
+}
+
 export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) => void }) {
   const [stage, setStage] = useState<Stage>("bvn");
   const [bvn, setBvn] = useState("");
   const [methods, setMethods] = useState<OtpMethod[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
   const [altPhone, setAltPhone] = useState("");
+  const [altOpen, setAltOpen] = useState(false);
   const [otp, setOtp] = useState("");
   const [check, setCheck] = useState<IdentityCheck | null>(null);
   const [sandbox, setSandbox] = useState(false);
@@ -72,7 +85,11 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
   const start = () =>
     run(async () => {
       const body = await post("/v1/kyc/bvn-lookup/start", { bvn: bvn.trim() });
-      setMethods(body.methods ?? []);
+      setMethods(
+        [...((body.methods ?? []) as OtpMethod[])].sort(
+          (a, b) => METHOD_ORDER(a.method) - METHOD_ORDER(b.method),
+        ),
+      );
       setSandbox(body.live === false);
       setStage("method");
     });
@@ -158,10 +175,19 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
 
       {stage === "method" && (
         <div className="mt-3 flex flex-col gap-3">
-          <p className="text-xs text-text-medium">Where should we send your approval code?</p>
+          <p className="text-xs text-text-medium">
+            Where should we send your approval code? These are the contacts your bank has on file
+            for this BVN.
+          </p>
+          {!methods.some((m) => m.method.includes("email")) && (
+            <p className="text-xs text-text-muted">
+              No email is on file for this BVN, so the code can only go by text message.
+            </p>
+          )}
           {methods.map((m) => (
             <div key={m.method} className="flex flex-col gap-2">
-              {m.method === "alternate_phone" && (
+              {/* The number box only appears once they pick this option. */}
+              {m.method === "alternate_phone" && altOpen && (
                 <Input
                   label="Phone number"
                   inputMode="tel"
@@ -173,9 +199,11 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
                 type="button"
                 variant="secondary"
                 disabled={busy}
-                onClick={() => sendOtp(m.method)}
+                onClick={() =>
+                  m.method === "alternate_phone" && !altOpen ? setAltOpen(true) : sendOtp(m.method)
+                }
               >
-                {m.hint ?? m.method}
+                {m.method === "alternate_phone" && altOpen ? "Send code to this number" : methodLabel(m)}
               </Button>
             </div>
           ))}
@@ -205,6 +233,11 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
           </button>
           {chosen === "alternate_phone" && (
             <p className="text-xs text-text-muted">Sent to {altPhone}.</p>
+          )}
+          {chosen?.includes("email") && (
+            <p className="text-xs text-text-muted">
+              Check the inbox of the email your bank has on file — and the spam folder.
+            </p>
           )}
         </div>
       )}
