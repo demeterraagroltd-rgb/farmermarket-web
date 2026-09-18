@@ -4,10 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { customerFetch, readError } from "../../lib/customer";
 
-const SCRIPT_SRC = "https://connect.withmono.com/connect.js";
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_MONO_PUBLIC_KEY;
 
-// Minimal shape of the global the Mono Connect script installs.
+// The widget comes from Mono's npm package, bundled with the site, rather
+// than the <script src="https://connect.withmono.com/connect.js"> the docs
+// still show: that host stopped answering (connections time out), and a
+// bank-linking step that dies on a third-party CDN is worse than one that
+// ships with the page. The package mounts its iframe from connect.mono.co.
 interface MonoConnectInstance {
   setup: () => void;
   open: () => void;
@@ -15,32 +18,26 @@ interface MonoConnectInstance {
 interface MonoConnectCtor {
   new (config: {
     key: string;
-    onSuccess: (payload: { code?: string; getAuthCode?: () => string }) => void;
+    scope: "auth";
+    onSuccess: (payload: { code?: string }) => void;
     onClose?: () => void;
     onLoad?: () => void;
-    data?: { customer?: { name?: string; email?: string } };
+    // Required by Connect v2 — a name AND an email, or it won't open.
+    data: { customer: { name: string; email: string } };
   }): MonoConnectInstance;
 }
-declare global {
-  interface Window {
-    Connect?: MonoConnectCtor;
-  }
-}
 
-let scriptPromise: Promise<void> | null = null;
-function loadScript(): Promise<void> {
-  if (typeof window === "undefined") return Promise.reject(new Error("no window"));
-  if (window.Connect) return Promise.resolve();
-  if (scriptPromise) return scriptPromise;
-  scriptPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = SCRIPT_SRC;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Couldn't load the bank-linking widget."));
-    document.head.appendChild(s);
-  });
-  return scriptPromise;
+// Imported on demand: the package touches `window` at import time, which
+// Next's server render doesn't have.
+let ctorPromise: Promise<MonoConnectCtor> | null = null;
+function loadConnect(): Promise<MonoConnectCtor> {
+  ctorPromise ??= import("@mono.co/connect.js")
+    .then((m) => (m.default ?? m) as unknown as MonoConnectCtor)
+    .catch((e) => {
+      ctorPromise = null; // allow a retry
+      throw e;
+    });
+  return ctorPromise;
 }
 
 export interface BankAnalysis {
@@ -68,9 +65,9 @@ export function MonoConnectButton({
 
   useEffect(() => {
     if (!PUBLIC_KEY) return;
-    loadScript()
+    loadConnect()
       .then(() => setReady(true))
-      .catch((e) => setError(e instanceof Error ? e.message : "Widget failed to load."));
+      .catch(() => setError("Couldn't load the bank-linking widget. Refresh and try again."));
   }, []);
 
   const exchange = useCallback(
@@ -95,15 +92,28 @@ export function MonoConnectButton({
     [token, onLinked],
   );
 
-  function open() {
-    if (!window.Connect || !PUBLIC_KEY || openedRef.current) return;
+  async function open() {
+    if (!PUBLIC_KEY || openedRef.current) return;
+    // Connect v2 refuses to open without both — say so here rather than let
+    // the widget fail silently inside its iframe.
+    if (!customer?.name || !customer?.email) {
+      setError("Add your name and email to your profile before linking a bank account.");
+      return;
+    }
     setError(null);
-    const connect = new window.Connect({
+    let Connect: MonoConnectCtor;
+    try {
+      Connect = await loadConnect();
+    } catch {
+      setError("Couldn't load the bank-linking widget. Refresh and try again.");
+      return;
+    }
+    const connect = new Connect({
       key: PUBLIC_KEY,
-      data: customer ? { customer } : undefined,
-      onSuccess: (payload) => {
+      scope: "auth",
+      data: { customer: { name: customer.name, email: customer.email } },
+      onSuccess: ({ code }) => {
         openedRef.current = false;
-        const code = payload.code ?? payload.getAuthCode?.();
         if (code) void exchange(code);
         else setError("The bank link didn't return an authorisation code.");
       },

@@ -101,6 +101,9 @@ interface KycView {
   bankLinkRequested: boolean;
   bankLinked: boolean;
   identityChecked: boolean;
+  // Mono Connect v2 won't open without the customer's email.
+  email: string | null;
+  fullName: string | null;
 }
 
 export default function AccountPage() {
@@ -158,6 +161,8 @@ export default function AccountPage() {
           bankLinkRequested: !!body?.profile?.bankLinkRequestedAt,
           bankLinked: !!body?.profile?.monoAccountId,
           identityChecked: !!body?.profile?.identityLookup,
+          email: body?.profile?.email ?? null,
+          fullName: body?.profile?.fullName ?? null,
         });
       })
       .catch(() => {});
@@ -293,7 +298,10 @@ export default function AccountPage() {
               <div className="mt-3">
                 <MonoConnectButton
                   token={session.token}
-                  customer={{ name: session.fullName || undefined }}
+                  customer={{
+                    name: kyc.fullName || session.fullName || undefined,
+                    email: kyc.email || undefined,
+                  }}
                   onLinked={setBankLinked}
                 />
               </div>
