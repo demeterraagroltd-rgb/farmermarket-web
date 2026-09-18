@@ -276,6 +276,7 @@ export default function OrderReviewPage() {
               userId={order.userId}
               check={p.identityLookup}
               hasNin={!!p.nin}
+              bvnLast4={p.bvnLast4}
               checkedAt={p.identityLookupAt as string | null | undefined}
               onChecked={load}
             />

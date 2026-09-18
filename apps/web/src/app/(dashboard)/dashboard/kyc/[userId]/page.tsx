@@ -280,6 +280,7 @@ export default function KycDetailPage() {
               userId={userId}
               check={(p as Record<string, unknown>).identityLookup}
               hasNin={!!(p as Record<string, unknown>).nin}
+              bvnLast4={p.bvnLast4}
               checkedAt={(p as Record<string, unknown>).identityLookupAt as string | null | undefined}
               onChecked={load}
             />

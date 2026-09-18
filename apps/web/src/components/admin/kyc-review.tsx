@@ -144,12 +144,15 @@ export function IdentityLookupView({
   userId,
   check,
   hasNin,
+  bvnLast4,
   checkedAt,
   onChecked,
 }: {
   userId: string;
   check: unknown;
   hasNin: boolean;
+  /** Last 4 of the BVN on file — the full number is only ever stored hashed. */
+  bvnLast4: string | null | undefined;
   checkedAt: string | null | undefined;
   onChecked: () => void;
 }) {
@@ -178,14 +181,39 @@ export function IdentityLookupView({
   );
 
   if (!c) {
+    // Say what's on file and what's pending separately — "no BVN check" read
+    // as "no BVN" to reviewers when one was provided but not yet verified.
     return (
-      <div className="py-1">
-        <p className="mb-2 text-sm text-text-muted">
-          {hasNin
-            ? "Not checked against any government record yet."
-            : "No NIN on file, and no BVN check yet."}
+      <div className="flex flex-col gap-1.5 py-1 text-sm">
+        <p className="text-text-dark">
+          <span className="text-text-muted">BVN: </span>
+          {bvnLast4 ? (
+            <>
+              on file (•••• {bvnLast4}) — <span className="text-text-muted">not verified yet</span>
+            </>
+          ) : (
+            <span className="text-text-muted">not provided</span>
+          )}
         </p>
-        {ninButton}
+        {bvnLast4 && (
+          // A reviewer can't run this one: we only hold a hash of the BVN,
+          // and NIBSS needs the holder's own approval code.
+          <p className="text-xs text-text-muted">
+            The applicant verifies their BVN from their account page — it needs a code only they
+            receive, so it can&apos;t be run from here.
+          </p>
+        )}
+        <p className="mt-1 text-text-dark">
+          <span className="text-text-muted">NIN: </span>
+          {hasNin ? (
+            <>
+              on file — <span className="text-text-muted">not verified yet</span>
+            </>
+          ) : (
+            <span className="text-text-muted">not provided</span>
+          )}
+        </p>
+        {hasNin && <div className="mt-1">{ninButton}</div>}
         {error && <p className="mt-1.5 text-xs text-error">{error}</p>}
       </div>
     );
