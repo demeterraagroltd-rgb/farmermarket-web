@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -58,6 +60,11 @@ const ID_DOC_KINDS = ["id_card", "passport", "drivers_license"] as const;
 // Mono gives a BVN consent session ~10 minutes; expire ours no later than
 // that so a stale session fails with our wording rather than theirs.
 const BVN_CONSENT_TTL_MS = 10 * 60 * 1000;
+// Same cooldown as the SMS OTP flow (OtpService.RESEND_COOLDOWN_MS) — one
+// resend per minute. Without this, a user tapping resend repeatedly fires a
+// real request to Mono/NIBSS on every tap, which costs money on the real
+// client and can read as abuse to NIBSS.
+const BVN_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 
 type ProfileWrite = Partial<typeof applicantProfiles.$inferInsert>;
 
@@ -79,7 +86,10 @@ export class KycService {
    * ever runs more than one instance this needs to move to Redis — a
    * follow-up leg would otherwise land on a process that never saw stage 1.
    */
-  private readonly bvnConsents = new Map<string, { sessionId: string; expiresAt: number }>();
+  private readonly bvnConsents = new Map<
+    string,
+    { sessionId: string; expiresAt: number; lastOtpSentAt: number | null }
+  >();
 
   // ── Registration ────────────────────────────────────────────────────────
 
@@ -418,7 +428,7 @@ export class KycService {
       throw new BadRequestException("That BVN doesn't match the one on your application");
     }
     const { sessionId, methods } = await this.lookup.initiateBvn(bvn);
-    this.bvnConsents.set(userId, { sessionId, expiresAt: Date.now() + BVN_CONSENT_TTL_MS });
+    this.bvnConsents.set(userId, { sessionId, expiresAt: Date.now() + BVN_CONSENT_TTL_MS, lastOtpSentAt: null });
     return {
       methods,
       expiresInSeconds: BVN_CONSENT_TTL_MS / 1000,
@@ -428,11 +438,33 @@ export class KycService {
     };
   }
 
-  /** Stage 2 — ask NIBSS to send the code to the method the holder picked. */
+  /**
+   * Stage 2 — ask NIBSS to send the code to the method the holder picked.
+   * Same one-per-minute throttle as the SMS OTP flow, enforced here (not
+   * just in the UI) so a bypassed or scripted client can't spam Mono.
+   */
   async sendBvnLookupOtp(userId: string, method: string, phoneNumber?: string) {
     const consent = this.activeConsent(userId);
+    if (consent.lastOtpSentAt && Date.now() - consent.lastOtpSentAt < BVN_OTP_RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil(
+        (BVN_OTP_RESEND_COOLDOWN_MS - (Date.now() - consent.lastOtpSentAt)) / 1000,
+      );
+      throw new HttpException(
+        `Please wait ${wait}s before requesting another code.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     await this.lookup.sendBvnOtp(consent.sessionId, method, phoneNumber);
-    return { sent: true as const };
+    consent.lastOtpSentAt = Date.now();
+    return {
+      sent: true as const,
+      resendAvailableInSeconds: BVN_OTP_RESEND_COOLDOWN_MS / 1000,
+      // The overall consent session doesn't reset on a resend — mirror it
+      // back (same field name as the start response) so the UI's two
+      // countdowns stay in sync with the server instead of drifting from
+      // client-side guesses.
+      expiresInSeconds: Math.max(0, Math.round((consent.expiresAt - Date.now()) / 1000)),
+    };
   }
 
   /** Stage 3 — exchange the OTP for the record and store the comparison. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Field";
@@ -13,6 +13,14 @@ import { accountFetch, readError } from "../../lib/customer";
 //
 // This is not the same shape as bank linking: there is no widget to hand off
 // to, so the steps are ours to render.
+//
+// Two clocks run once a code has been requested, both driven by values the
+// API returns (never guessed client-side, so they can't drift from what the
+// server actually enforces — see kyc.service.ts sendBvnLookupOtp):
+//   - the whole consent session, ~10 minutes, after which Mono discards it
+//     and a fresh BVN submission is the only way forward;
+//   - a 60-second resend cooldown, the same one the server enforces, so a
+//     tap on "Resend" when it's disabled can't fire a real request anyway.
 
 export interface IdentityCheck {
   source: "bvn" | "nin" | "mashup";
@@ -51,6 +59,19 @@ function methodLabel(m: OtpMethod): string {
   return m.hint ? `SMS — ${m.hint}` : "Send to my phone on file";
 }
 
+function mmss(totalSeconds: number): string {
+  const s = Math.max(0, totalSeconds);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+/** Pulls a wait time out of the server's 429 message as a fallback if the happy-path fields are ever missing. */
+function parseWaitSeconds(message: string): number | null {
+  const m = message.match(/wait (\d+)s/i);
+  return m ? Number(m[1]) : null;
+}
+
 export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) => void }) {
   const [stage, setStage] = useState<Stage>("bvn");
   const [bvn, setBvn] = useState("");
@@ -64,6 +85,24 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Wall-clock deadlines, not countdown values — a tab left in the
+  // background still shows the right number when it comes back, instead of
+  // one that only ticked while visible.
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
+  const [resendAt, setResendAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (stage !== "method" && stage !== "otp") return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [stage]);
+
+  const sessionSecondsLeft =
+    sessionExpiresAt == null ? null : Math.max(0, Math.round((sessionExpiresAt - now) / 1000));
+  const sessionExpired = sessionSecondsLeft === 0;
+  const resendSecondsLeft = resendAt == null ? 0 : Math.max(0, Math.round((resendAt - now) / 1000));
+
   const post = useCallback(async (path: string, body: unknown) => {
     const res = await accountFetch(path, { method: "POST", body: JSON.stringify(body) });
     if (!res.ok) throw new Error(await readError(res));
@@ -76,7 +115,13 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+      const message = e instanceof Error ? e.message : "Something went wrong. Please try again.";
+      setError(message);
+      // Belt and braces: the button is already disabled while resendSecondsLeft
+      // > 0, but if the server's clock disagrees with ours, honour its wait
+      // time rather than let a retry loop hammer it.
+      const wait = parseWaitSeconds(message);
+      if (wait != null) setResendAt(Date.now() + wait * 1000);
     } finally {
       setBusy(false);
     }
@@ -91,6 +136,10 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
         ),
       );
       setSandbox(body.live === false);
+      setSessionExpiresAt(
+        typeof body.expiresInSeconds === "number" ? Date.now() + body.expiresInSeconds * 1000 : null,
+      );
+      setResendAt(null);
       setStage("method");
     });
 
@@ -100,11 +149,19 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
       if (needsPhone && altPhone.trim().length < 7) {
         throw new Error("Enter the phone number the code should go to.");
       }
-      await post("/v1/kyc/bvn-lookup/send-otp", {
+      const body = await post("/v1/kyc/bvn-lookup/send-otp", {
         method,
         ...(needsPhone ? { phoneNumber: altPhone.trim() } : {}),
       });
       setChosen(method);
+      if (typeof body.expiresInSeconds === "number") {
+        setSessionExpiresAt(Date.now() + body.expiresInSeconds * 1000);
+      }
+      setResendAt(
+        typeof body.resendAvailableInSeconds === "number"
+          ? Date.now() + body.resendAvailableInSeconds * 1000
+          : Date.now() + 60_000,
+      );
       setStage("otp");
     });
 
@@ -115,6 +172,21 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
       setStage("done");
       onVerified?.(body.check as IdentityCheck);
     });
+
+  // The session died server-side — nothing left on this bvn/session is
+  // salvageable. Keep the BVN they already typed so restarting is one tap,
+  // not eleven digits again.
+  function restart() {
+    setMethods([]);
+    setChosen(null);
+    setAltPhone("");
+    setAltOpen(false);
+    setOtp("");
+    setSessionExpiresAt(null);
+    setResendAt(null);
+    setError(null);
+    setStage("bvn");
+  }
 
   if (stage === "done" && check) {
     const tone =
@@ -173,7 +245,15 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
         </div>
       )}
 
-      {stage === "method" && (
+      {(stage === "method" || stage === "otp") && sessionSecondsLeft != null && (
+        <p className={`mt-3 text-xs ${sessionExpired ? "font-medium text-error" : "text-text-muted"}`}>
+          {sessionExpired
+            ? "This verification session has expired."
+            : `This session expires in ${mmss(sessionSecondsLeft)} — finish before then, or start again.`}
+        </p>
+      )}
+
+      {stage === "method" && !sessionExpired && (
         <div className="mt-3 flex flex-col gap-3">
           <p className="text-xs text-text-medium">
             Where should we send your approval code? These are the contacts your bank has on file
@@ -210,7 +290,7 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
         </div>
       )}
 
-      {stage === "otp" && (
+      {stage === "otp" && !sessionExpired && (
         <div className="mt-3 flex flex-col gap-3">
           <Input
             label="Approval code"
@@ -223,14 +303,24 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
           <Button type="button" disabled={busy || otp.length < 4} onClick={complete}>
             {busy ? "Verifying…" : "Verify"}
           </Button>
-          <button
-            type="button"
-            className="self-start text-xs text-text-muted underline"
-            onClick={() => setStage("method")}
-            disabled={busy}
-          >
-            Send the code somewhere else
-          </button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              type="button"
+              className="text-xs text-text-muted underline disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => chosen && sendOtp(chosen)}
+              disabled={busy || resendSecondsLeft > 0 || !chosen}
+            >
+              {resendSecondsLeft > 0 ? `Resend code (${resendSecondsLeft}s)` : "Resend code"}
+            </button>
+            <button
+              type="button"
+              className="text-xs text-text-muted underline"
+              onClick={() => setStage("method")}
+              disabled={busy}
+            >
+              Send it somewhere else
+            </button>
+          </div>
           {chosen === "alternate_phone" && (
             <p className="text-xs text-text-muted">Sent to {altPhone}.</p>
           )}
@@ -239,6 +329,17 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
               Check the inbox of the email your bank has on file — and the spam folder.
             </p>
           )}
+        </div>
+      )}
+
+      {sessionExpired && (
+        <div className="mt-3 flex flex-col gap-2">
+          <p className="text-xs text-text-muted">
+            Nothing was checked — start again with your BVN to get a fresh code.
+          </p>
+          <Button type="button" variant="secondary" onClick={restart}>
+            Start again
+          </Button>
         </div>
       )}
 
