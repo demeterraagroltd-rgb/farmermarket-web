@@ -4,6 +4,7 @@ import { koboToNaira, percentOfKobo } from "@farmermarket/core";
 import {
   orders,
   orderItems,
+  pickupCenters,
   products,
   bnplPlans,
   creditProfiles,
@@ -28,6 +29,11 @@ const DELIVERY_FEE_KOBO = 50_000n; // ₦500
 const SERVICE_FEE_PERCENT = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** "25 Sep 2026" — the shape the emails and the order pages both read. */
+function shortDate(d: Date | null): string | null {
+  return d ? d.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }) : null;
+}
 
 @Injectable()
 export class OrdersService {
@@ -170,6 +176,15 @@ export class OrdersService {
       const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, input.bnplPlanId)).limit(1);
       if (!plan || !plan.isActive) throw new BadRequestException("Selected plan is not available");
 
+      const [centre] = await tx
+        .select()
+        .from(pickupCenters)
+        .where(eq(pickupCenters.id, input.pickupCenterId))
+        .limit(1);
+      if (!centre || !centre.isActive) {
+        throw new BadRequestException("That pickup centre isn't available — choose another");
+      }
+
       const subtotalKobo = input.items.reduce((sum, item) => {
         const price = productById.get(item.productId)!.priceKobo;
         return sum + price * BigInt(item.quantity);
@@ -186,7 +201,10 @@ export class OrdersService {
           serviceFeeKobo: percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT),
           totalKobo,
           bnplPlanId: plan.id,
-          deliveryAddress: input.deliveryAddress,
+          pickupCenterId: centre.id,
+          pickupCenterName: centre.name,
+          pickupCenterAddress: centre.address,
+          pickupDate: input.pickupDate,
         })
         .returning();
 
@@ -214,8 +232,12 @@ export class OrdersService {
     // emails follow later. Fire-and-forget.
     await this.notifyBuyer(userId, (name) =>
       emails.orderReceived(name, {
+        orderId: response.id,
         total: response.total.toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
-        address: response.deliveryAddress,
+        pickupCenter: [response.pickupCenterName, response.pickupCenterAddress]
+          .filter(Boolean)
+          .join(", "),
+        pickupDate: shortDate(response.pickupDate),
       }),
     );
 
@@ -300,9 +322,11 @@ export class OrdersService {
       const response = await this.attachItems(updated);
       await this.notifyBuyer(order.userId, (name) =>
         emails.orderApproved(name, {
+          orderId,
           total: koboToNaira(order.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
           deliverySlot: updated.deliverySlot,
-          address: order.deliveryAddress,
+          pickupCenter: [order.pickupCenterName, order.pickupCenterAddress].filter(Boolean).join(", "),
+          pickupDate: shortDate(order.pickupDate),
         }),
       );
       return { ...response, userId: order.userId, deliverySlot: updated.deliverySlot };
@@ -321,7 +345,7 @@ export class OrdersService {
       .where(eq(orders.id, orderId))
       .returning();
     const response = await this.attachItems(updated);
-    await this.notifyBuyer(order.userId, (name) => emails.orderRejected(name, reason));
+    await this.notifyBuyer(order.userId, (name) => emails.orderRejected(name, { orderId, reason }));
     return { ...response, userId: order.userId };
   }
 
@@ -390,6 +414,12 @@ export class OrdersService {
       serviceFee: koboToNaira(order.serviceFeeKobo),
       total: koboToNaira(order.totalKobo),
       bnplPlanId: order.bnplPlanId,
+      pickupCenterId: order.pickupCenterId,
+      pickupCenterName: order.pickupCenterName,
+      pickupCenterAddress: order.pickupCenterAddress,
+      pickupDate: order.pickupDate,
+      // Legacy: orders placed before pickup centres existed carry the buyer's
+      // street address instead. Null on every new order.
       deliveryAddress: order.deliveryAddress,
       placedAt: order.placedAt,
       estimatedDelivery: order.estimatedDeliveryAt,

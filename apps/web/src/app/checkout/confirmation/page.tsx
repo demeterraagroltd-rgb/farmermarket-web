@@ -7,6 +7,7 @@ import { SiteHeader } from "../../../components/site/SiteHeader";
 import { Card } from "../../../components/ui/Card";
 import { CheckIcon } from "../../../components/ui/icons";
 import { formatDate, formatNairaAmount } from "../../../lib/format";
+import { pickupLabel } from "../../../lib/orders";
 import { accountFetch } from "../../../lib/customer";
 
 interface OrderItem {
@@ -21,7 +22,10 @@ interface Order {
   status: string;
   items: OrderItem[];
   total: number;
-  deliveryAddress: string;
+  pickupCenterName: string | null;
+  pickupCenterAddress: string | null;
+  pickupDate: string | null;
+  deliveryAddress: string | null;
   placedAt: string;
 }
 
@@ -84,7 +88,9 @@ function ConfirmationContent() {
                 <span className="tabular-nums text-primary">{formatNairaAmount(order.total)}</span>
               </div>
               <p className="mt-3 text-xs text-text-muted">
-                Delivery to {order.deliveryAddress} · Placed {formatDate(order.placedAt)}
+                Collect from {pickupLabel(order) ?? "—"}
+                {order.pickupDate ? ` on ${formatDate(order.pickupDate)}` : ""} · Placed{" "}
+                {formatDate(order.placedAt)}
               </p>
             </div>
           ) : null}

@@ -6,8 +6,10 @@ import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input, Select } from "../../components/ui/Field";
+import { StateLgaSelects } from "../../components/ui/StateLgaSelects";
 import { BriefcaseIcon, CartIcon, LeafIcon, CheckIcon } from "../../components/ui/icons";
 import { customerFetch, getCustomerSession, readError, saveCustomerSession } from "../../lib/customer";
+import { PASSWORD_HELP, passwordProblem } from "../../lib/password";
 
 // The wizard is long and part of it is filled before the account exists —
 // a refresh or a closed tab shouldn't cost that work. We snapshot the typed
@@ -69,8 +71,8 @@ interface FormState {
   fullName: string;
   phone: string;
   email: string;
-  loginCode: string;
-  loginCodeConfirm: string;
+  password: string;
+  passwordConfirm: string;
   dateOfBirth: string;
   gender: string;
   maritalStatus: string;
@@ -97,8 +99,8 @@ const EMPTY_FORM: FormState = {
   fullName: "",
   phone: "",
   email: "",
-  loginCode: "",
-  loginCodeConfirm: "",
+  password: "",
+  passwordConfirm: "",
   dateOfBirth: "",
   gender: "",
   maritalStatus: "",
@@ -183,9 +185,9 @@ export default function ApplyPage() {
       setStep(resumable.step);
     } else if (resumable.step >= 2 && !session?.token) {
       // Details were saved but the session is gone (different browser, cleared
-      // storage). Log back in with the saved phone + login code at step 1.
+      // storage). Log back in with the saved phone + password at step 1.
       setStep(1);
-      setStepError("Welcome back — your details are saved. Confirm your login code to continue.");
+      setStepError("Welcome back — your details are saved. Sign in with your password to continue.");
     } else {
       setStep(resumable.step);
     }
@@ -221,8 +223,9 @@ export default function ApplyPage() {
         if (!form.fullName.trim() || !form.phone.trim() || !form.email.trim()) {
           throw new Error("Full name, phone and email are required.");
         }
-        if (!/^\d{6}$/.test(form.loginCode)) throw new Error("Your login code must be 6 digits.");
-        if (form.loginCode !== form.loginCodeConfirm) throw new Error("The login codes don't match.");
+        const passwordError = passwordProblem(form.password);
+        if (passwordError) throw new Error(passwordError);
+        if (form.password !== form.passwordConfirm) throw new Error("The passwords don't match.");
         const res = await customerFetch("/v1/auth/customer/register", "", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -230,7 +233,7 @@ export default function ApplyPage() {
             fullName: form.fullName.trim(),
             phone: form.phone.trim(),
             email: form.email.trim(),
-            loginCode: form.loginCode,
+            password: form.password,
             employmentType: form.employmentType || undefined,
           }),
         });
@@ -240,12 +243,12 @@ export default function ApplyPage() {
         } else {
           const msg = await readError(res);
           // Resuming a saved draft whose account was already created — sign
-          // back in with the same phone + login code rather than dead-ending.
+          // back in with the same phone + password rather than dead-ending.
           if (/already exists/i.test(msg)) {
             const login = await customerFetch("/v1/auth/customer/login", "", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ phone: form.phone.trim(), code: form.loginCode }),
+              body: JSON.stringify({ phone: form.phone.trim(), password: form.password }),
             });
             if (!login.ok) throw new Error(await readError(login));
             body = await login.json();
@@ -293,13 +296,21 @@ export default function ApplyPage() {
           lgaOfOrigin: form.lgaOfOrigin.trim(),
         });
       } else if (step === 4) {
+        // Mirrors the server's REQUIRED_PROFILE_FIELDS: employment details are
+        // the inputs to income verification, so a file without them can't be
+        // underwritten. Caught here too so the applicant sees it on the step
+        // they got wrong rather than at final submission.
+        if (!form.employmentType) throw new Error("Your employment status is required.");
+        if (!form.employer.trim()) throw new Error("Your employer is required.");
+        if (!form.jobTitle.trim()) throw new Error("Your job title is required.");
+        if (!form.netMonthlySalaryNaira || Number(form.netMonthlySalaryNaira) <= 0) {
+          throw new Error("Your net monthly salary is required.");
+        }
         await patchProfile({
           employmentType: form.employmentType || undefined,
-          employer: form.employer.trim() || undefined,
-          jobTitle: form.jobTitle.trim() || undefined,
-          netMonthlySalaryNaira: form.netMonthlySalaryNaira
-            ? Number(form.netMonthlySalaryNaira)
-            : undefined,
+          employer: form.employer.trim(),
+          jobTitle: form.jobTitle.trim(),
+          netMonthlySalaryNaira: Number(form.netMonthlySalaryNaira),
           salaryDay: form.salaryDay ? Number(form.salaryDay) : undefined,
           requestedLimitNaira: form.requestedLimitNaira
             ? Number(form.requestedLimitNaira)
@@ -407,7 +418,7 @@ export default function ApplyPage() {
               <p className="font-semibold text-text-dark">What happens next</p>
               <p className="mt-1">
                 Once you&apos;re verified, you can check out with your credit limit here or in the
-                Farmer Market app — sign in with the same phone number and login code on either.
+                Farmer Market app — sign in with the same phone number and password on either.
               </p>
             </div>
             <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
@@ -521,22 +532,25 @@ export default function ApplyPage() {
                   <Input type="email" label="Email" value={form.email} onChange={(e) => update("email", e.target.value)} required />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input
-                      label="6-digit login code"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={form.loginCode}
-                      onChange={(e) => update("loginCode", e.target.value.replace(/\D/g, ""))}
+                      type="password"
+                      label="Password"
+                      autoComplete="new-password"
+                      value={form.password}
+                      onChange={(e) => update("password", e.target.value)}
+                      required
                     />
                     <Input
-                      label="Confirm login code"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={form.loginCodeConfirm}
-                      onChange={(e) => update("loginCodeConfirm", e.target.value.replace(/\D/g, ""))}
+                      type="password"
+                      label="Confirm password"
+                      autoComplete="new-password"
+                      value={form.passwordConfirm}
+                      onChange={(e) => update("passwordConfirm", e.target.value)}
+                      required
                     />
                   </div>
                   <p className="text-xs text-text-muted">
-                    You&apos;ll use your phone number and this code to sign in to the app.
+                    {PASSWORD_HELP} You&apos;ll sign in with your phone number and this password,
+                    here or in the app.
                   </p>
                 </>
               )}
@@ -581,16 +595,28 @@ export default function ApplyPage() {
               {step === 3 && (
                 <>
                   <Input label="Street address" value={form.street} onChange={(e) => update("street", e.target.value)} required />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input label="City / town" value={form.city} onChange={(e) => update("city", e.target.value)} required />
-                    <Input label="LGA of residence" value={form.lga} onChange={(e) => update("lga", e.target.value)} required />
-                  </div>
-                  <Input label="State of residence" value={form.addrState} onChange={(e) => update("addrState", e.target.value)} required />
+                  <Input label="City / town" value={form.city} onChange={(e) => update("city", e.target.value)} required />
+                  <StateLgaSelects
+                    idPrefix="residence"
+                    stateLabel="State of residence"
+                    lgaLabel="LGA of residence"
+                    state={form.addrState}
+                    lga={form.lga}
+                    onStateChange={(v) => update("addrState", v)}
+                    onLgaChange={(v) => update("lga", v)}
+                    required
+                  />
                   <hr className="border-dark-border/40" />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input label="State of origin" value={form.stateOfOrigin} onChange={(e) => update("stateOfOrigin", e.target.value)} required />
-                    <Input label="LGA of origin" value={form.lgaOfOrigin} onChange={(e) => update("lgaOfOrigin", e.target.value)} required />
-                  </div>
+                  <StateLgaSelects
+                    idPrefix="origin"
+                    stateLabel="State of origin"
+                    lgaLabel="LGA of origin"
+                    state={form.stateOfOrigin}
+                    lga={form.lgaOfOrigin}
+                    onStateChange={(v) => update("stateOfOrigin", v)}
+                    onLgaChange={(v) => update("lgaOfOrigin", v)}
+                    required
+                  />
                 </>
               )}
 
@@ -604,10 +630,10 @@ export default function ApplyPage() {
                       Change
                     </button>
                   </div>
-                  <Input label="Employer (optional)" value={form.employer} onChange={(e) => update("employer", e.target.value)} />
-                  <Input label="Job title (optional)" value={form.jobTitle} onChange={(e) => update("jobTitle", e.target.value)} />
+                  <Input label="Employer" value={form.employer} onChange={(e) => update("employer", e.target.value)} required />
+                  <Input label="Job title" value={form.jobTitle} onChange={(e) => update("jobTitle", e.target.value)} required />
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Input type="number" label="Net monthly salary, ₦ (optional)" value={form.netMonthlySalaryNaira} onChange={(e) => update("netMonthlySalaryNaira", e.target.value)} min={0} />
+                    <Input type="number" label="Net monthly salary, ₦" value={form.netMonthlySalaryNaira} onChange={(e) => update("netMonthlySalaryNaira", e.target.value)} min={0} required />
                     <Input type="number" label="Salary day of month (optional)" value={form.salaryDay} onChange={(e) => update("salaryDay", e.target.value)} min={1} max={31} />
                   </div>
                   <Input type="number" label="How much credit would you like? ₦ (optional)" value={form.requestedLimitNaira} onChange={(e) => update("requestedLimitNaira", e.target.value)} min={0} />
@@ -674,6 +700,10 @@ export default function ApplyPage() {
                     <span className="text-right font-medium text-text-dark">{form.phone || "—"}</span>
                     <span className="text-text-muted">Applying as</span>
                     <span className="text-right font-medium text-text-dark">{form.employmentType || "—"}</span>
+                    <span className="text-text-muted">Employer</span>
+                    <span className="text-right font-medium text-text-dark">{form.employer || "—"}</span>
+                    <span className="text-text-muted">Job title</span>
+                    <span className="text-right font-medium text-text-dark">{form.jobTitle || "—"}</span>
                     <span className="text-text-muted">Date of birth</span>
                     <span className="text-right font-medium text-text-dark">{form.dateOfBirth || "—"}</span>
                     <span className="text-text-muted">BVN</span>

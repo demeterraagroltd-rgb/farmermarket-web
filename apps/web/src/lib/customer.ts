@@ -5,9 +5,8 @@
 //    to `customerFetch` explicitly — it needs one before there's a session to
 //    speak of, and it's mid-flow, not signed in.
 //  * The account pages read a persisted session via `accountFetch`. The same
-//    account and the same 6-digit login code work on the phone app; the API
-//    issues a 30-day token to both, so signing in on one doesn't sign the
-//    other out.
+//    account and the same password work on the phone app; the API issues a
+//    30-day token to both, so signing in on one doesn't sign the other out.
 //
 // localStorage, like the staff side — no refresh rotation yet. Both keys are
 // namespaced apart so a staff member testing a buyer account on the same

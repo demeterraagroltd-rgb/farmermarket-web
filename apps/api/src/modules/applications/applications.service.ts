@@ -46,12 +46,12 @@ export class ApplicationsService {
 
     const { row, user, isNewUser } = await this.db.transaction(async (tx) => {
       // Sign Up is the identity step: create the customer record by phone. If
-      // a 6-digit login code was supplied, hash it onto the row so the person
-      // can sign in afterwards. If the phone already has an account, keep its
-      // existing login code (a re-submitted application must not silently reset
-      // someone's credential); only fill one in if it's missing.
-      const loginCodeHash = input.loginCode
-        ? await argon2.hash(input.loginCode, { type: argon2.argon2id })
+      // a password was supplied, hash it onto the row so the person can sign
+      // in afterwards. If the phone already has an account, keep its existing
+      // password (a re-submitted application must not silently reset someone's
+      // credential); only fill one in if it's missing.
+      const passwordHash = input.password
+        ? await argon2.hash(input.password, { type: argon2.argon2id })
         : undefined;
       const [existingUser] = await tx.select().from(users).where(eq(users.phone, input.phone)).limit(1);
       const isNewUser = !existingUser;
@@ -63,13 +63,13 @@ export class ApplicationsService {
             phone: input.phone,
             fullName: input.fullName,
             email: input.email,
-            loginCodeHash,
+            passwordHash,
           })
           .returning();
-      } else if (loginCodeHash && !user.loginCodeHash) {
+      } else if (passwordHash && !user.passwordHash) {
         [user] = await tx
           .update(users)
-          .set({ loginCodeHash, updatedAt: new Date() })
+          .set({ passwordHash, updatedAt: new Date() })
           .where(eq(users.id, user.id))
           .returning();
       }

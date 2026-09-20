@@ -1,6 +1,8 @@
 // Plain, dependency-free templated strings. Keep them short and literal —
 // this isn't a marketing surface.
 
+import { customerLinks } from "./links";
+
 function wrap(body: string): string {
   return `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:15px;color:#0D2119;line-height:1.6">
 ${body}
@@ -8,12 +10,37 @@ ${body}
 </div>`;
 }
 
+// Several of the values below are free text someone typed into a form — a
+// reviewer's note, a rejection reason, a delivery address, a person's name.
+// They land inside HTML, so they get escaped: an angle bracket in a name
+// shouldn't be able to inject markup into the recipient's mail client.
+function esc(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// One obvious destination per email. Styled as an <a> rather than a <button>
+// because mail clients strip most button markup; everything is inline for the
+// same reason. The bare URL is repeated underneath so the link survives a
+// client that renders the button as nothing.
+function cta(href: string, label: string): string {
+  return `<p style="margin-top:24px;margin-bottom:4px">
+  <a href="${href}" style="display:inline-block;background:#0D2119;color:#FFFFFF;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px">${label}</a>
+</p>
+<p style="margin:0;color:#7A9D8C;font-size:12px;word-break:break-all">${href}</p>`;
+}
+
 export const emails = {
   // ── Account ───────────────────────────────────────────────────────────
   welcome: (name: string) => ({
     subject: "Welcome to Farmer Market",
     html: wrap(
-      `<p>Hi ${name},</p><p>Your Farmer Market account is set up. Next: complete verification so you can check out on credit — we'll walk you through it in the app.</p>`,
+      `<p>Hi ${esc(name)},</p><p>Your Farmer Market account is set up. Next: complete verification so you can check out on credit — we'll walk you through it.</p>` +
+        cta(customerLinks.apply(), "Complete verification"),
     ),
   }),
 
@@ -21,34 +48,43 @@ export const emails = {
   applicationReceived: (name: string, opts: { reference: string; requestedLimit: string }) => ({
     subject: `We've received your application (${opts.reference})`,
     html: wrap(
-      `<p>Hi ${name},</p><p>Thanks for applying for a Farmer Market credit limit of <strong>${opts.requestedLimit}</strong>.</p>` +
-        `<p>Reference: <strong>${opts.reference}</strong>. Our team will review it and email you the decision.</p>`,
+      `<p>Hi ${esc(name)},</p><p>Thanks for applying for a Farmer Market credit limit of <strong>${esc(opts.requestedLimit)}</strong>.</p>` +
+        `<p>Reference: <strong>${esc(opts.reference)}</strong>. Our team will review it and email you the decision.</p>` +
+        cta(customerLinks.account(), "View my account"),
     ),
   }),
   applicationApproved: (name: string, opts: { reference: string; approvedLimit: string }) => ({
     subject: `Your application is approved (${opts.reference})`,
     html: wrap(
-      `<p>Hi ${name},</p><p>Good news — application <strong>${opts.reference}</strong> is approved with a credit limit of <strong>${opts.approvedLimit}</strong>.</p>` +
-        `<p>You can start shopping now. Each order still gets a quick approval before delivery.</p>`,
+      `<p>Hi ${esc(name)},</p><p>Good news — application <strong>${esc(opts.reference)}</strong> is approved with a credit limit of <strong>${esc(opts.approvedLimit)}</strong>.</p>` +
+        `<p>You can start shopping now. Each order still gets a quick approval before it's released for collection.</p>` +
+        cta(customerLinks.marketplace(), "Start shopping"),
     ),
   }),
   applicationDeclined: (name: string, opts: { reference: string; note?: string }) => ({
     subject: `About your application (${opts.reference})`,
     html: wrap(
-      `<p>Hi ${name},</p><p>We couldn't approve application <strong>${opts.reference}</strong> at this time.</p>` +
+      `<p>Hi ${esc(name)},</p><p>We couldn't approve application <strong>${esc(opts.reference)}</strong> at this time.</p>` +
         (opts.note
-          ? `<blockquote style="border-left:3px solid #E5484D;padding-left:12px;color:#3A5E4B">${opts.note}</blockquote>`
+          ? `<blockquote style="border-left:3px solid #E5484D;padding-left:12px;color:#3A5E4B">${esc(opts.note)}</blockquote>`
           : "") +
-        `<p>Reply to this email if you'd like to talk it through.</p>`,
+        `<p>Reply to this email if you'd like to talk it through.</p>` +
+        cta(customerLinks.account(), "View my account"),
     ),
   }),
 
   // ── Order ────────────────────────────────────────────────────────────
-  orderReceived: (name: string, opts: { total: string; address: string }) => ({
+  orderReceived: (
+    name: string,
+    opts: { orderId: string; total: string; pickupCenter: string; pickupDate?: string | null },
+  ) => ({
     subject: "We've got your order",
     html: wrap(
-      `<p>Hi ${name},</p><p>Your order of <strong>${opts.total}</strong> is in. It's awaiting a quick approval — we'll email you the moment it's confirmed.</p>` +
-        `<p>Delivery to: ${opts.address}</p>`,
+      `<p>Hi ${esc(name)},</p><p>Your order of <strong>${esc(opts.total)}</strong> is in. It's awaiting a quick approval — we'll email you the moment it's confirmed.</p>` +
+        `<p>Collect from: <strong>${esc(opts.pickupCenter)}</strong>${
+          opts.pickupDate ? `<br/>Pickup date: <strong>${esc(opts.pickupDate)}</strong>` : ""
+        }</p>` +
+        cta(customerLinks.order(opts.orderId), "Track this order"),
     ),
   }),
 
@@ -59,9 +95,10 @@ export const emails = {
   ) => ({
     subject: "Repayment received",
     html: wrap(
-      `<p>Hi ${name},</p><p>We've recorded your repayment of <strong>${opts.amount}</strong> ` +
+      `<p>Hi ${esc(name)},</p><p>We've recorded your repayment of <strong>${esc(opts.amount)}</strong> ` +
         `(installment ${opts.installmentNumber} of ${opts.totalInstallments}).</p>` +
-        `<p>${opts.fullyPaid ? "This installment is now fully paid. Thank you!" : "Thanks — it's been applied to your balance."}</p>`,
+        `<p>${opts.fullyPaid ? "This installment is now fully paid. Thank you!" : "Thanks — it's been applied to your balance."}</p>` +
+        cta(customerLinks.repayments(), "View my repayments"),
     ),
   }),
   repaymentReminder: (
@@ -76,9 +113,10 @@ export const emails = {
   ) => ({
     subject: `Reminder: ${opts.amount} due ${opts.dueLabel}`,
     html: wrap(
-      `<p>Hi ${name},</p><p>A quick reminder that installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
-        ` — <strong>${opts.amount}</strong> — is due <strong>${opts.dueLabel}</strong> (${opts.dueDate}).</p>` +
-        `<p>Open the Farmer Market app to pay. If you've already paid, thank you — you can ignore this.</p>`,
+      `<p>Hi ${esc(name)},</p><p>A quick reminder that installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
+        ` — <strong>${esc(opts.amount)}</strong> — is due <strong>${esc(opts.dueLabel)}</strong> (${esc(opts.dueDate)}).</p>` +
+        `<p>If you've already paid, thank you — you can ignore this.</p>` +
+        cta(customerLinks.repayments(), "Make a payment"),
     ),
   }),
   repaymentOverdue: (
@@ -96,11 +134,12 @@ export const emails = {
         ? `Your account needs attention — ${opts.amount} overdue`
         : `${opts.amount} is now overdue`,
     html: wrap(
-      `<p>Hi ${name},</p><p>Installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
-        ` — <strong>${opts.amount}</strong> — is <strong>${opts.daysPastDue} ${opts.daysPastDue === 1 ? "day" : "days"} overdue</strong>.</p>` +
+      `<p>Hi ${esc(name)},</p><p>Installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
+        ` — <strong>${esc(opts.amount)}</strong> — is <strong>${opts.daysPastDue} ${opts.daysPastDue === 1 ? "day" : "days"} overdue</strong>.</p>` +
         (opts.severe
           ? `<p>Please reply to this email or contact us so we can work out a plan. Continued non-payment affects your credit standing and future limit.</p>`
-          : `<p>Please pay in the Farmer Market app as soon as you can to keep your account in good standing.</p>`),
+          : `<p>Please pay as soon as you can to keep your account in good standing.</p>`) +
+        cta(customerLinks.repayments(), "Make a payment"),
     ),
   }),
 
@@ -108,41 +147,62 @@ export const emails = {
   verificationSubmitted: (name: string) => ({
     subject: "We've received your verification",
     html: wrap(
-      `<p>Hi ${name},</p><p>Thanks — we've got your details and documents. A reviewer will check them shortly and we'll email you as soon as it's done.</p>`,
+      `<p>Hi ${esc(name)},</p><p>Thanks — we've got your details and documents. A reviewer will check them shortly and we'll email you as soon as it's done.</p>` +
+        cta(customerLinks.account(), "Check my status"),
     ),
   }),
   verificationNeedsInfo: (name: string, note: string) => ({
     subject: "A bit more needed to verify your account",
     html: wrap(
-      `<p>Hi ${name},</p><p>We looked at your verification and need another look at a few things:</p><blockquote style="border-left:3px solid #F5A623;padding-left:12px;color:#3A5E4B">${note}</blockquote><p>Open the app, update the details, and re-submit.</p>`,
+      `<p>Hi ${esc(name)},</p><p>We looked at your verification and need another look at a few things:</p><blockquote style="border-left:3px solid #F5A623;padding-left:12px;color:#3A5E4B">${esc(note)}</blockquote><p>Update the details below and re-submit — it only takes a minute.</p>` +
+        cta(customerLinks.apply(), "Update my details"),
     ),
   }),
   verified: (name: string) => ({
     subject: "You're verified 🎉",
     html: wrap(
-      `<p>Hi ${name},</p><p>Your account is verified. You can now check out — each order still gets a quick approval before delivery.</p>`,
+      `<p>Hi ${esc(name)},</p><p>Your account is verified. You can now check out — each order still gets a quick approval before it's released for collection.</p>` +
+        cta(customerLinks.marketplace(), "Start shopping"),
     ),
   }),
   bankLinkRequested: (name: string) => ({
     subject: "Speed up your verification — link your salary account",
     html: wrap(
-      `<p>Hi ${name},</p><p>A credit officer reviewing your application asked us to reach out: linking your ` +
+      `<p>Hi ${esc(name)},</p><p>A credit officer reviewing your application asked us to reach out: linking your ` +
         `salary account lets us verify your income automatically, which can speed up your decision.</p>` +
-        `<p>It's optional and read-only — we can't move money from it. Open the app or your application page ` +
-        `and you'll see a "Link your salary account" option.</p>`,
+        `<p>It's optional and read-only — we can't move money from it. Your account page has a ` +
+        `"Link your salary account" button.</p>` +
+        cta(customerLinks.account(), "Link my salary account"),
     ),
   }),
-  orderApproved: (name: string, opts: { total: string; deliverySlot?: string | null; address: string }) => ({
+  orderApproved: (
+    name: string,
+    opts: {
+      orderId: string;
+      total: string;
+      deliverySlot?: string | null;
+      pickupCenter: string;
+      pickupDate?: string | null;
+    },
+  ) => ({
     subject: "Your order is approved",
     html: wrap(
-      `<p>Hi ${name},</p><p>Your order of <strong>${opts.total}</strong> has been approved.</p>` +
-        `<p>Delivery to: ${opts.address}<br/>${opts.deliverySlot ? `Expected: <strong>${opts.deliverySlot}</strong>` : "We'll confirm a delivery time shortly."}</p>`,
+      `<p>Hi ${esc(name)},</p><p>Your order of <strong>${esc(opts.total)}</strong> has been approved.</p>` +
+        `<p>Collect from: <strong>${esc(opts.pickupCenter)}</strong><br/>${
+          opts.deliverySlot
+            ? `Expected: <strong>${esc(opts.deliverySlot)}</strong>`
+            : opts.pickupDate
+              ? `Pickup date: <strong>${esc(opts.pickupDate)}</strong>`
+              : "We'll confirm a collection time shortly."
+        }</p>` +
+        cta(customerLinks.order(opts.orderId), "Track this order"),
     ),
   }),
-  orderRejected: (name: string, reason: string) => ({
+  orderRejected: (name: string, opts: { orderId: string; reason: string }) => ({
     subject: "About your recent order",
     html: wrap(
-      `<p>Hi ${name},</p><p>We couldn't approve your recent order.</p><blockquote style="border-left:3px solid #E5484D;padding-left:12px;color:#3A5E4B">${reason}</blockquote><p>Nothing has been charged to your credit. You're welcome to try again.</p>`,
+      `<p>Hi ${esc(name)},</p><p>We couldn't approve your recent order.</p><blockquote style="border-left:3px solid #E5484D;padding-left:12px;color:#3A5E4B">${esc(opts.reason)}</blockquote><p>Nothing has been charged to your credit. You're welcome to try again.</p>` +
+        cta(customerLinks.order(opts.orderId), "View this order"),
     ),
   }),
 };

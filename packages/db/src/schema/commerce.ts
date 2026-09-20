@@ -11,6 +11,20 @@ export const orderStatusEnum = pgEnum("order_status", [
   "placed", "confirmed", "preparing", "on_the_way", "delivered", "cancelled",
 ]);
 
+// Where a buyer collects an order. Farmer Market doesn't run home delivery:
+// goods are staged at one of these and collected in person, so an order names
+// a centre and a date rather than a customer's street address.
+export const pickupCenters = pgTable("pickup_centers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  address: text("address").notNull(),
+  // Deactivate rather than delete once orders reference it — the foreign key
+  // from a past order has to keep resolving.
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // §5.1 commerce domain, §14 — the Flutter app's `Order` model this mirrors
 // (lib/features/orders/domain/models/order.dart) is naira/double; this
 // stores kobo/bigint per §5's money rule, and the API converts at the edge.
@@ -32,7 +46,18 @@ export const orders = pgTable(
     serviceFeeKobo: bigint("service_fee_kobo", { mode: "bigint" }).notNull().default(sql`0`),
     totalKobo: bigint("total_kobo", { mode: "bigint" }).notNull(),
     bnplPlanId: uuid("bnpl_plan_id").notNull().references(() => bnplPlans.id),
-    deliveryAddress: text("delivery_address").notNull(),
+    pickupCenterId: uuid("pickup_center_id").references(() => pickupCenters.id),
+    // Snapshotted from the centre at placement, like orderItems snapshots a
+    // product: renaming or closing a centre must not rewrite what a past
+    // order told its buyer.
+    pickupCenterName: text("pickup_center_name"),
+    pickupCenterAddress: text("pickup_center_address"),
+    // When the buyer said they'd collect. A real timestamptz, not a display
+    // string — "next Tuesday" means nothing to a query.
+    pickupDate: timestamp("pickup_date", { withTimezone: true }),
+    // Retired, not dropped: orders placed before pickup centres existed carry
+    // the buyer's street address here and the dashboard still has to show them.
+    deliveryAddress: text("delivery_address"),
     placedAt: timestamp("placed_at", { withTimezone: true }).notNull().defaultNow(),
     estimatedDeliveryAt: timestamp("estimated_delivery_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),

@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { canonicalLga, canonicalState } from "@farmermarket/core";
 import { z } from "zod";
+import { passwordSchema } from "../../../common/password";
 
 export const DOCUMENT_KINDS = [
   "id_card",
@@ -13,12 +15,56 @@ export const DOCUMENT_KINDS = [
   "other",
 ] as const;
 
-const addressSchema = z.object({
-  street: z.string().min(1),
-  city: z.string().min(1),
-  state: z.string().min(1),
-  lga: z.string().min(1),
-});
+// State/LGA arrive from a dropdown fed by GET /v1/config/locations, so a value
+// that isn't on the list means a stale client or a hand-rolled request. Either
+// way, reject it rather than store a fourth spelling of the same place.
+// Canonicalising here (not just validating) means loose-but-real input from the
+// Flutter app or an older web bundle still lands as the official spelling.
+const stateSchema = z
+  .string()
+  .min(1)
+  .transform((value, ctx) => {
+    const canonical = canonicalState(value);
+    if (!canonical) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Pick a state from the list.",
+      });
+      return z.NEVER;
+    }
+    return canonical;
+  });
+
+// `state` and `lga` always travel together, so the pair is validated as a unit
+// — an LGA name is only meaningful within its state (several recur across
+// states), and this is what stops a plausible-but-wrong pairing.
+const addressSchema = z
+  .object({
+    street: z.string().min(1),
+    city: z.string().min(1),
+    state: z.string().min(1),
+    lga: z.string().min(1),
+  })
+  .transform((address, ctx) => {
+    const state = canonicalState(address.state);
+    const lga = canonicalLga(address.state, address.lga);
+    if (!state) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["state"],
+        message: "Pick a state from the list.",
+      });
+    }
+    if (!lga) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["lga"],
+        message: "Pick an LGA from the list for that state.",
+      });
+    }
+    if (!state || !lga) return z.NEVER;
+    return { ...address, state, lga };
+  });
 
 const nextOfKinSchema = z.object({
   name: z.string().min(1),
@@ -41,12 +87,19 @@ export const kycProfileFields = {
   nin: z.string().regex(/^\d{11}$/, "NIN must be 11 digits").optional(),
   email: z.string().email().optional(),
   residentialAddress: addressSchema.optional(),
-  stateOfOrigin: z.string().min(1).optional(),
-  lgaOfOrigin: z.string().min(1).optional(),
+  stateOfOrigin: stateSchema.optional(),
+  // Canonicalised against the state in KycService.buildProfileWrite, which is
+  // where both halves of the pair are visible — a partial PATCH may carry only
+  // one of them. The pair itself is re-checked at submission.
+  lgaOfOrigin: z.string().min(1).transform((v) => v.trim()).optional(),
   nextOfKin: nextOfKinSchema.optional(),
+  // Employment details are required by submission time — see
+  // KycService.REQUIRED_PROFILE_FIELDS. They stay optional in this schema
+  // because it also backs partial PATCH /kyc/me updates, but `.min(1)` means
+  // an empty string is never silently accepted as "filled in".
   employmentType: z.enum(["Government", "Private", "Self-employed"]).optional(),
-  employer: z.string().optional(),
-  jobTitle: z.string().optional(),
+  employer: z.string().trim().min(1, "Employer is required.").optional(),
+  jobTitle: z.string().trim().min(1, "Job title is required.").optional(),
   netMonthlySalaryNaira: z.number().positive().optional(),
   salaryDay: z.number().int().min(1).max(31).optional(),
   yearsEmployed: z.string().optional(),
@@ -65,7 +118,7 @@ export const registerSchema = z.object({
   fullName: z.string().min(1),
   phone: z.string().min(6),
   email: z.string().email(),
-  loginCode: z.string().regex(/^\d{6}$/, "Login code must be 6 digits"),
+  password: passwordSchema,
   // Proof the phone was verified by SMS (POST /v1/auth/customer/otp/verify).
   // Optional at the schema level while no SMS sender is approved; enforced by
   // KycService when PHONE_VERIFICATION_REQUIRED=true.
@@ -77,7 +130,7 @@ export class RegisterDto {
   @ApiProperty() fullName!: string;
   @ApiProperty() phone!: string;
   @ApiProperty() email!: string;
-  @ApiProperty({ description: "6-digit login code" }) loginCode!: string;
+  @ApiProperty({ description: "At least 8 characters, letters and numbers" }) password!: string;
   @ApiPropertyOptional({ description: "Token from POST /auth/customer/otp/verify" })
   phoneVerificationToken?: string;
   @ApiPropertyOptional() dateOfBirth?: string;

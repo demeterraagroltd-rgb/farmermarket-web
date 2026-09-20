@@ -16,6 +16,7 @@ import {
   DocumentIcon,
   InboxIcon,
   LogOutIcon,
+  MapPinIcon,
 } from "../../components/ui/icons";
 
 // Nav visibility mirrors each module's real @Roles() guard on the API —
@@ -33,6 +34,7 @@ const NAV: Array<{ href: string; label: string; icon: typeof GridIcon; roles: St
   { href: "/dashboard/customers", label: "Customers", icon: PeopleIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/kyc", label: "Verification", icon: BadgeCheckIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/catalog", label: "Catalog", icon: BoxIcon, roles: ["super_admin", "admin"] },
+  { href: "/dashboard/pickup-centers", label: "Pickup centres", icon: MapPinIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/orders", label: "Orders", icon: DocumentIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/repayments", label: "Repayments", icon: BankIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/inbox", label: "Inbox", icon: InboxIcon, roles: ["super_admin", "admin"] },

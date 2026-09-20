@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../../../lib/auth";
 import { formatDate, formatNaira, formatNairaAmount } from "../../../../../../lib/format";
+import { pickupFieldLabel, pickupLabel } from "../../../../../../lib/orders";
 import { PageHeader, Card } from "../../../../../../components/ui/Card";
 import { Badge } from "../../../../../../components/ui/Badge";
 import { Button } from "../../../../../../components/ui/Button";
@@ -38,7 +39,10 @@ interface OrderSummary {
   deliveryFee: number;
   serviceFee: number;
   total: number;
-  deliveryAddress: string;
+  pickupCenterName: string | null;
+  pickupCenterAddress: string | null;
+  pickupDate: string | null;
+  deliveryAddress: string | null;
   placedAt: string;
   approvedAt: string | null;
   deliverySlot: string | null;
@@ -398,7 +402,8 @@ export default function OrderReviewPage() {
             <Field label="Service fee" value={formatNairaAmount(order.serviceFee)} />
             <Field label="Total / credit amount" value={formatNairaAmount(order.total)} />
             <Field label="Plan" value={order.bnplPlanName} />
-            <Field label="Delivery address" value={order.deliveryAddress} />
+            <Field label={pickupFieldLabel(order)} value={pickupLabel(order) ?? "—"} />
+            {order.pickupDate && <Field label="Pickup date" value={formatDate(order.pickupDate)} />}
 
             {repaymentPreview && repaymentPreview.length > 0 && (
               <>

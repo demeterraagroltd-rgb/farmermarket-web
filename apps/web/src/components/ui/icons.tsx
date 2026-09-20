@@ -206,3 +206,12 @@ export function CartIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function MapPinIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M10 17.8s5.4-4.9 5.4-9A5.4 5.4 0 0 0 4.6 8.8c0 4.1 5.4 9 5.4 9Z" />
+      <circle cx="10" cy="8.6" r="2" />
+    </svg>
+  );
+}

@@ -7,6 +7,12 @@ import { AuthService } from "./auth.service";
 import { OtpService } from "./otp.service";
 import { LoginDto, loginSchema } from "./dto/login.dto";
 import { CustomerLoginDto, customerLoginSchema } from "./dto/customer-login.dto";
+import {
+  ChangePasswordDto,
+  changePasswordSchema,
+  ResetPasswordDto,
+  resetPasswordSchema,
+} from "./dto/customer-password.dto";
 import { SetTxnPinDto, setTxnPinSchema } from "./dto/set-txn-pin.dto";
 import { OtpRequestDto, otpRequestSchema, OtpVerifyDto, otpVerifySchema } from "./dto/otp.dto";
 
@@ -22,8 +28,8 @@ export class AuthController {
 }
 
 // Separate controller/route namespace from staff auth — same service,
-// different identity model (phone + 6-digit login code, no password) and a
-// different guard downstream (CustomerJwtAuthGuard, not JwtAuthGuard).
+// different identity model (phone + password) and a different guard
+// downstream (CustomerJwtAuthGuard, not JwtAuthGuard).
 @ApiTags("auth")
 @Controller("auth/customer")
 export class CustomerAuthController {
@@ -37,9 +43,11 @@ export class CustomerAuthController {
     return this.authService.loginCustomer(body);
   }
 
-  // ── Phone verification (Sign Up) ──────────────────────────────────────
+  // ── Phone verification (Sign Up and password reset) ────────────────────
   // Public. `request` texts a 6-digit code; `verify` swaps a correct code
-  // for a short-lived token that POST /auth/customer/register requires.
+  // for a short-lived token that POST /auth/customer/register (purpose
+  // "register") or POST /auth/customer/password/reset (purpose "reset")
+  // requires.
 
   @Post("otp/request")
   requestOtp(@Body(new ZodValidationPipe(otpRequestSchema)) body: OtpRequestDto) {
@@ -51,11 +59,29 @@ export class CustomerAuthController {
     return this.otpService.verify(body.phone, body.code, body.purpose);
   }
 
+  // Public recovery: prove the phone by SMS, then choose a password. Also
+  // the way accounts created before passwords existed get their first one.
+  @Post("password/reset")
+  resetPassword(@Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordDto) {
+    return this.authService.resetPassword(body.phone, body.phoneVerificationToken, body.password);
+  }
+
   @Get("me")
   @ApiBearerAuth()
   @UseGuards(CustomerJwtAuthGuard)
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getCustomerMe(user.userId);
+  }
+
+  // Signed-in change — the current password must verify first.
+  @Post("password/change")
+  @ApiBearerAuth()
+  @UseGuards(CustomerJwtAuthGuard)
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.userId, body.currentPassword, body.newPassword);
   }
 
   // Called once, from the app's first-transaction flow.

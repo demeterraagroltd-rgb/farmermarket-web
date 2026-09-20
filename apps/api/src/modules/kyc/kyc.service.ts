@@ -9,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import * as argon2 from "argon2";
-import { nairaToKobo } from "@farmermarket/core";
+import { canonicalLga, isValidStateLgaPair, nairaToKobo } from "@farmermarket/core";
 import {
   applicantProfiles,
   auditLogs,
@@ -45,7 +45,9 @@ const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
 // A profile is ready to submit for verification once these are present.
 // NIN used to be deferrable; it no longer is — Mashup needs it alongside the
 // BVN for the no-consent identity check, so it's required from here on.
-// Employment docs stay deferrable (§ user's brief).
+// Employment details are required too: they're the inputs to income
+// verification and the scorecard (§8), and a file without them can't be
+// underwritten at all. Employment *documents* stay deferrable.
 const REQUIRED_PROFILE_FIELDS: (keyof typeof applicantProfiles.$inferSelect)[] = [
   "fullName",
   "dateOfBirth",
@@ -54,6 +56,10 @@ const REQUIRED_PROFILE_FIELDS: (keyof typeof applicantProfiles.$inferSelect)[] =
   "residentialAddress",
   "stateOfOrigin",
   "lgaOfOrigin",
+  "employmentType",
+  "employer",
+  "jobTitle",
+  "netMonthlySalaryKobo",
 ];
 const ID_DOC_KINDS = ["id_card", "passport", "drivers_license"] as const;
 
@@ -100,11 +106,11 @@ export class KycService {
 
     const result = await this.db.transaction(async (tx) => {
       const [existing] = await tx.select().from(users).where(eq(users.phone, input.phone)).limit(1);
-      if (existing?.loginCodeHash) {
+      if (existing?.passwordHash) {
         throw new BadRequestException("An account with this phone number already exists — please log in");
       }
 
-      const loginCodeHash = await argon2.hash(input.loginCode, { type: argon2.argon2id });
+      const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
       const now = new Date();
       let user = existing;
       if (!user) {
@@ -114,7 +120,7 @@ export class KycService {
             phone: input.phone,
             fullName: input.fullName,
             email: input.email,
-            loginCodeHash,
+            passwordHash,
             phoneVerifiedAt: now,
           })
           .returning();
@@ -124,7 +130,7 @@ export class KycService {
           .set({
             fullName: input.fullName,
             email: input.email,
-            loginCodeHash,
+            passwordHash,
             phoneVerifiedAt: existing.phoneVerifiedAt ?? now,
             updatedAt: now,
           })
@@ -193,6 +199,18 @@ export class KycService {
       throw new BadRequestException("You're already verified");
     }
     const missing = this.missingRequirements(profile);
+    // Both pairs are checked against the merged profile rather than per-write,
+    // because a partial PATCH can legitimately carry only one half. Reaching
+    // here means the file is complete, so a pair that doesn't hold together is
+    // stale or hand-rolled data — reject it rather than verify it.
+    if (profile.stateOfOrigin && profile.lgaOfOrigin &&
+        !isValidStateLgaPair(profile.stateOfOrigin, profile.lgaOfOrigin)) {
+      missing.push("an LGA of origin that belongs to your state of origin (pick both from the lists)");
+    }
+    const addr = profile.residentialAddress as { state?: string; lga?: string } | null;
+    if (addr?.state && addr?.lga && !isValidStateLgaPair(addr.state, addr.lga)) {
+      missing.push("an LGA of residence that belongs to your state of residence (pick both from the lists)");
+    }
     const docs = await this.db.select().from(kycDocuments).where(eq(kycDocuments.userId, userId));
     const hasId = docs.some((d) => (ID_DOC_KINDS as readonly string[]).includes(d.kind) && d.status !== "superseded");
     if (!hasId) missing.push("a government photo ID (ID card, passport, or driver's licence)");
@@ -713,7 +731,14 @@ export class KycService {
     if (input.nin !== undefined) w.nin = input.nin;
     if (input.residentialAddress !== undefined) w.residentialAddress = input.residentialAddress;
     if (input.stateOfOrigin !== undefined) w.stateOfOrigin = input.stateOfOrigin;
-    if (input.lgaOfOrigin !== undefined) w.lgaOfOrigin = input.lgaOfOrigin;
+    if (input.lgaOfOrigin !== undefined) {
+      // Canonicalise against the state in the same request when we have it.
+      // A partial PATCH carrying only the LGA can't be checked here — the
+      // merged pair is validated in submitForVerification instead, so a
+      // mismatch can't be submitted even if it can be saved mid-edit.
+      const canonical = canonicalLga(input.stateOfOrigin ?? null, input.lgaOfOrigin);
+      w.lgaOfOrigin = canonical ?? input.lgaOfOrigin;
+    }
     if (input.nextOfKin !== undefined) w.nextOfKin = input.nextOfKin;
     if (input.employmentType !== undefined) w.employmentType = input.employmentType;
     if (input.employer !== undefined) w.employer = input.employer;
@@ -736,8 +761,17 @@ export class KycService {
       residentialAddress: "your residential address",
       stateOfOrigin: "your state of origin",
       lgaOfOrigin: "your LGA of origin",
+      employmentType: "your employment status",
+      employer: "your employer",
+      jobTitle: "your job title",
+      netMonthlySalaryKobo: "your monthly income",
     };
-    return REQUIRED_PROFILE_FIELDS.filter((f) => p[f] == null).map((f) => labels[f] ?? f);
+    // An empty string is "not filled in" just as much as null — older rows
+    // predate the `.min(1)` on these fields, and `== null` would wave them
+    // through with a blank employer on the file.
+    const blank = (v: unknown) =>
+      v == null || (typeof v === "string" && v.trim() === "");
+    return REQUIRED_PROFILE_FIELDS.filter((f) => blank(p[f])).map((f) => labels[f] ?? f);
   }
 
   private publicProfile(p: typeof applicantProfiles.$inferSelect) {

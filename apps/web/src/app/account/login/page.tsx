@@ -9,7 +9,7 @@ import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Field";
 import { customerFetch, readError, saveCustomerSession } from "../../../lib/customer";
 
-// Customer sign-in — phone + the 6-digit login code chosen at /apply, against
+// Customer sign-in — phone + the password chosen at /apply, against
 // POST /v1/auth/customer/login. Deliberately the same endpoint and the same
 // credential the Flutter app uses: an account created (or signed in) here is
 // signed in on the phone too, and vice versa — there is one login, not two.
@@ -34,7 +34,7 @@ function CustomerLoginForm() {
   const destination = next && next.startsWith("/") ? next : "/account";
 
   const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -45,7 +45,7 @@ function CustomerLoginForm() {
     try {
       const res = await customerFetch("/v1/auth/customer/login", null, {
         method: "POST",
-        body: JSON.stringify({ phone: phone.trim(), code }),
+        body: JSON.stringify({ phone: phone.trim(), password }),
       });
       if (!res.ok) throw new Error(await readError(res));
       const body = await res.json();
@@ -73,7 +73,7 @@ function CustomerLoginForm() {
           <div className="mb-6 text-center">
             <h1 className="text-2xl font-bold tracking-tight text-text-dark">Sign in</h1>
             <p className="mt-1.5 text-sm text-text-medium">
-              Use the phone number and login code from your Farmer Market account — the same one
+              Use the phone number and password from your Farmer Market account — the same one
               that works in the app.
             </p>
           </div>
@@ -88,19 +88,23 @@ function CustomerLoginForm() {
                 required
               />
               <Input
-                label="6-digit login code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                label="Password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
               />
               {error && <p className="whitespace-pre-line text-sm text-error">{error}</p>}
-              <Button type="submit" disabled={loading || code.length !== 6} className="mt-1 w-full">
+              <Button type="submit" disabled={loading || !password} className="mt-1 w-full">
                 {loading ? "Signing in…" : "Sign in"}
               </Button>
             </form>
+            <p className="mt-4 text-center text-sm">
+              <Link href="/account/reset-password" className="font-semibold text-primary hover:underline">
+                Forgot your password?
+              </Link>
+            </p>
           </Card>
           <p className="mt-5 text-center text-sm text-text-muted">
             No account yet?{" "}

@@ -1,9 +1,9 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { z } from "zod";
 
-// 'register' is the only purpose wired up today (Sign Up). The field exists
-// now so login-OTP / code-reset can be added without a schema change.
-export const otpPurposeSchema = z.enum(["register"]);
+// 'register' proves the phone at Sign Up; 'reset' proves it again when someone
+// needs to choose a password without knowing the current one.
+export const otpPurposeSchema = z.enum(["register", "reset"]);
 export type OtpPurpose = z.infer<typeof otpPurposeSchema>;
 
 export const otpRequestSchema = z.object({
@@ -23,7 +23,7 @@ export class OtpRequestDto implements OtpRequestInput {
   @ApiProperty()
   phone!: string;
 
-  @ApiProperty({ enum: ["register"], default: "register" })
+  @ApiProperty({ enum: ["register", "reset"], default: "register" })
   purpose!: OtpPurpose;
 }
 
@@ -34,6 +34,6 @@ export class OtpVerifyDto implements OtpVerifyInput {
   @ApiProperty({ description: "6-digit code from the SMS" })
   code!: string;
 
-  @ApiProperty({ enum: ["register"], default: "register" })
+  @ApiProperty({ enum: ["register", "reset"], default: "register" })
   purpose!: OtpPurpose;
 }

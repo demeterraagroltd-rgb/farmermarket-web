@@ -1,19 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card, EmptyState } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
-import { StatCard } from "../../components/ui/StatCard";
+import { Input } from "../../components/ui/Field";
 import { Tabs } from "../../components/ui/Tabs";
 import { formatDate, formatNairaAmount } from "../../lib/format";
+import { ORDER_STATUS_TONE, orderStatusLabel } from "../../lib/orders";
+import { PASSWORD_HELP, passwordProblem } from "../../lib/password";
 import {
   accountFetch,
   clearCustomerSession,
   getCustomerSession,
   patchCustomerSession,
+  readError,
   type CustomerSession,
   type VerificationStatus,
 } from "../../lib/customer";
@@ -21,9 +25,9 @@ import { MonoConnectButton, type BankAnalysis } from "../../components/site/Mono
 import { BvnVerifyCard, type IdentityCheck } from "../../components/site/BvnVerifyCard";
 
 interface CreditProfile {
-  totalLimit: number;
-  usedAmount: number;
-  availableAmount: number;
+  // Deliberately just the tier: the limit, what's used and what's left are
+  // enforced server-side at checkout and reviewed in the staff dashboard,
+  // but a buyer's own screen shouldn't lead with how much they may owe.
   tier: string;
 }
 
@@ -84,17 +88,6 @@ const VERIFICATION_COPY: Record<
   },
 };
 
-const ORDER_STATUS_TONE: Record<string, "success" | "warning" | "error" | "info" | "neutral"> = {
-  pending_approval: "warning",
-  confirmed: "info",
-  preparing: "info",
-  on_the_way: "info",
-  delivered: "success",
-  rejected: "error",
-  cancelled: "neutral",
-  placed: "info",
-};
-
 interface KycView {
   verificationNote: string | null;
   rejectedDocs: Array<{ kind: string; rejectionReason: string | null }>;
@@ -117,6 +110,15 @@ export default function AccountPage() {
   const [bankLinked, setBankLinked] = useState<BankAnalysis | null>(null);
   const [identityChecked, setIdentityChecked] = useState<IdentityCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Emails link here as /account?tab=repayments, so the tab a customer was
+  // sent to is the tab they land on. Read from `window` instead of
+  // useSearchParams — one string isn't worth a Suspense boundary.
+  const [tab, setTab] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested === "orders" || requested === "repayments") setTab(requested);
+  }, []);
 
   useEffect(() => {
     const current = getCustomerSession();
@@ -138,9 +140,13 @@ export default function AccountPage() {
       .then(async (res) => {
         if (!res.ok) return;
         const body = await res.json();
-        if (body?.verificationStatus) {
-          patchCustomerSession({ verificationStatus: body.verificationStatus });
-          setSession((s) => (s ? { ...s, verificationStatus: body.verificationStatus } : s));
+        const status = body?.verificationStatus as VerificationStatus | undefined;
+        // Only when it actually changed — `session` is this effect's
+        // dependency, so storing an equal-but-new object re-runs the fetch,
+        // which stores another one, forever.
+        if (status && status !== session.verificationStatus) {
+          patchCustomerSession({ verificationStatus: status });
+          setSession({ ...session, verificationStatus: status });
         }
       })
       .catch(() => {});
@@ -212,9 +218,12 @@ export default function AccountPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm text-text-muted">Welcome back</p>
-              <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-text-dark">
-                {session.fullName || session.phone}
-              </h1>
+              <div className="mt-0.5 flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight text-text-dark">
+                  {session.fullName || session.phone}
+                </h1>
+                {credit && <Badge tone="gold">Tier {credit.tier}</Badge>}
+              </div>
             </div>
             <Button variant="ghost" onClick={handleSignOut}>
               Sign out
@@ -321,15 +330,6 @@ export default function AccountPage() {
             </Card>
           )}
 
-          {credit && (
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <StatCard label="Credit limit" value={formatNairaAmount(credit.totalLimit)} />
-              <StatCard label="Available" value={formatNairaAmount(credit.availableAmount)} tone="success" />
-              <StatCard label="In use" value={formatNairaAmount(credit.usedAmount)} />
-              <StatCard label="Tier" value={credit.tier} />
-            </div>
-          )}
-
           {upcoming.length > 0 && (
             <Card className="mt-6 p-5">
               <p className="text-sm font-semibold text-text-dark">Next repayment due</p>
@@ -346,8 +346,16 @@ export default function AccountPage() {
             </Card>
           )}
 
+          <ChangePasswordCard />
+
           <Card className="mt-6 overflow-hidden">
-            <Tabs tabs={[{ id: "orders", label: "Orders" }, { id: "repayments", label: "Repayments" }]}>
+            <Tabs
+              tabs={[
+                { id: "orders", label: "Orders" },
+                { id: "repayments", label: "Repayments" },
+              ]}
+              defaultTab={tab}
+            >
               {(active) =>
                 active === "orders" ? (
                   <OrdersPanel orders={orders} error={error} />
@@ -373,14 +381,18 @@ function OrdersPanel({ orders, error }: { orders: Order[] | null; error: string 
   return (
     <div className="flex flex-col divide-y divide-dark-border/40">
       {orders.map((order) => (
-        <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
+        <Link
+          key={order.id}
+          href={`/account/orders/${order.id}`}
+          className="flex flex-wrap items-center justify-between gap-3 py-4 transition-colors hover:bg-surface/60"
+        >
           <div>
             <div className="flex items-center gap-2">
               <p className="font-semibold text-text-dark">
                 {order.items.length} item{order.items.length === 1 ? "" : "s"}
               </p>
               <Badge tone={ORDER_STATUS_TONE[order.status] ?? "neutral"}>
-                {order.status.replace(/_/g, " ")}
+                {orderStatusLabel(order.status)}
               </Badge>
             </div>
             <p className="mt-1 text-xs text-text-muted">
@@ -392,8 +404,13 @@ function OrdersPanel({ orders, error }: { orders: Order[] | null; error: string 
               {order.rejectionReason ? ` · ${order.rejectionReason}` : ""}
             </p>
           </div>
-          <p className="font-bold tabular-nums text-primary">{formatNairaAmount(order.total)}</p>
-        </div>
+          <div className="flex items-center gap-3">
+            <p className="font-bold tabular-nums text-primary">{formatNairaAmount(order.total)}</p>
+            <span aria-hidden className="text-text-muted">
+              &rsaquo;
+            </span>
+          </div>
+        </Link>
       ))}
     </div>
   );
@@ -433,5 +450,85 @@ function RepaymentsPanel({ repayments }: { repayments: Repayment[] | null }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function ChangePasswordCard() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    const problem = passwordProblem(next);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    if (next !== confirm) {
+      setError("The new passwords don't match.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await accountFetch("/v1/auth/customer/password/change", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      if (!res.ok) throw new Error(await readError(res));
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't change your password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card className="mt-6 p-5">
+      <p className="text-sm font-semibold text-text-dark">Change password</p>
+      <form onSubmit={handleSubmit} className="mt-3 grid gap-4 sm:grid-cols-3">
+        <Input
+          label="Current password"
+          type="password"
+          autoComplete="current-password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          required
+        />
+        <Input
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          required
+        />
+        <Input
+          label="Confirm new password"
+          type="password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required
+        />
+        <div className="sm:col-span-3">
+          <p className="text-xs text-text-muted">{PASSWORD_HELP}</p>
+          {error && <p className="mt-2 whitespace-pre-line text-sm text-error">{error}</p>}
+          {saved && <p className="mt-2 text-sm text-success">Password changed.</p>}
+          <Button type="submit" variant="secondary" disabled={loading} className="mt-3">
+            {loading ? "Saving…" : "Change password"}
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

@@ -92,6 +92,20 @@
       "when": 1789722536170,
       "tag": "0012_omniscient_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789863045878,
+      "tag": "0013_fat_sprite",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789865398105,
+      "tag": "0014_nice_proudstar",
+      "breakpoints": true
     }
   ]
 }

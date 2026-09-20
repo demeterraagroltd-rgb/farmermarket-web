@@ -7,12 +7,14 @@ import { ApplicationsModule } from "./modules/applications/applications.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { OrdersModule } from "./modules/orders/orders.module";
+import { PickupCentersModule } from "./modules/pickup-centers/pickup-centers.module";
 import { WalletModule } from "./modules/wallet/wallet.module";
 import { KycModule } from "./modules/kyc/kyc.module";
 import { CollectionsModule } from "./modules/collections/collections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { InboxModule } from "./modules/inbox/inbox.module";
+import { LocationsModule } from "./modules/locations/locations.module";
 
 @Module({
   imports: [
@@ -25,11 +27,13 @@ import { InboxModule } from "./modules/inbox/inbox.module";
     StaffModule,
     CustomersModule,
     OrdersModule,
+    PickupCentersModule,
     WalletModule,
     KycModule,
     CollectionsModule,
     ReportsModule,
     InboxModule,
+    LocationsModule,
   ],
 })
 export class AppModule {}

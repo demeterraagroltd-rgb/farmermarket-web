@@ -1,20 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { z } from "zod";
+import { passwordSchema } from "../../../common/password";
 
 // Deliberately narrower than the plan's full wizard (§11.3): no BVN, no bank
 // linking, no documents — those need Mono/Termii/S3, which aren't wired up
 // yet. This is the "fake adapters first" slice (§9.2), covering only what a
 // public applicant can submit without any third-party dependency.
-// The public web `/apply` form and the mobile Sign Up both post here. `email`
-// and `loginCode` are optional at the schema level so the existing web form
-// keeps working; when `loginCode` is present it's hashed onto the user row
-// (that's how they'll sign in). The full-KYC wizard (Phase 3) always sends both.
+// The mobile Sign Up posts here. `email` and `password` are optional at the
+// schema level so a partial submission keeps working; when `password` is
+// present it's hashed onto the user row (that's how they'll sign in). The
+// full-KYC wizard (Phase 3) always sends both.
 export const createApplicationSchema = z.object({
   fullName: z.string().min(1),
   phone: z.string().min(1),
   email: z.string().email().optional(),
-  // User-chosen 6-digit login code — this is how they'll sign in afterwards.
-  loginCode: z.string().regex(/^\d{6}$/, "Login code must be 6 digits").optional(),
+  // The password the user chooses at Sign Up — how they'll sign in afterwards.
+  password: passwordSchema.optional(),
   employer: z.string().optional(),
   employmentType: z.enum(["Government", "Private"]).optional(),
   jobTitle: z.string().optional(),
@@ -38,8 +39,8 @@ export class CreateApplicationDto implements CreateApplicationInput {
   @ApiPropertyOptional()
   email?: string;
 
-  @ApiPropertyOptional({ description: "6-digit login code the user chooses at Sign Up" })
-  loginCode?: string;
+  @ApiPropertyOptional({ description: "Password the user chooses at Sign Up" })
+  password?: string;
 
   @ApiPropertyOptional()
   employer?: string;

@@ -14,6 +14,7 @@ import { applicantProfiles, staff, mfaCredentials, sessions, users, type Db } fr
 import { DB } from "../../db/db.module";
 import type { LoginInput } from "./dto/login.dto";
 import type { CustomerLoginInput } from "./dto/customer-login.dto";
+import { OtpService } from "./otp.service";
 
 const ACCESS_TOKEN_TTL = "15m"; // §6.1
 // No refresh-token/session mechanism on the customer side yet — the
@@ -27,6 +28,7 @@ export class AuthService {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly jwt: JwtService,
+    private readonly otp: OtpService,
   ) {}
 
   /** argon2id, per §6.1 — never bcrypt/scrypt for new credentials here. */
@@ -91,7 +93,7 @@ export class AuthService {
   }
 
   /**
-   * Phone + 6-digit login code for an *existing* customer. `kind: 'customer'`
+   * Phone + password for an *existing* customer. `kind: 'customer'`
    * in the JWT claim is a defense-in-depth marker: CustomerJwtAuthGuard
    * checks it explicitly to keep a customer token off staff-only routes.
    */
@@ -102,9 +104,9 @@ export class AuthService {
         "No account found for this phone number — please sign up first",
       );
     }
-    if (!user.loginCodeHash) {
+    if (!user.passwordHash) {
       throw new UnauthorizedException(
-        "This account has no login code — please sign up again to set one",
+        "This account has no password yet — use “Forgot password” to set one",
       );
     }
     if (user.deactivatedAt) {
@@ -112,9 +114,9 @@ export class AuthService {
         "This account has been deactivated — contact support",
       );
     }
-    const ok = await argon2.verify(user.loginCodeHash, input.code);
+    const ok = await argon2.verify(user.passwordHash, input.password);
     if (!ok) {
-      throw new UnauthorizedException("Incorrect phone number or login code");
+      throw new UnauthorizedException("Incorrect phone number or password");
     }
 
     const accessToken = this.jwt.sign(
@@ -140,12 +142,47 @@ export class AuthService {
     return p?.status ?? "unverified";
   }
 
-  /** Hashes and stores a Sign-Up login code onto the user row. */
-  async setLoginCode(userId: string, code: string) {
+  /** Hashes and stores a Sign-Up password onto the user row. */
+  async setPassword(userId: string, password: string) {
     await this.db
       .update(users)
-      .set({ loginCodeHash: await this.hashCode(code), updatedAt: new Date() })
+      .set({ passwordHash: await this.hashCode(password), updatedAt: new Date() })
       .where(eq(users.id, userId));
+  }
+
+  /** Signed-in change: the current password must verify first. */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const [user] = await this.db
+      .select({ passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) throw new NotFoundException("Account not found");
+    // 400, not 401: the bearer token authenticated fine, it's the confirming
+    // password in the body that's wrong. Both clients treat a 401 as "this
+    // session is dead" and sign the customer out — a typo here shouldn't.
+    if (!user.passwordHash || !(await argon2.verify(user.passwordHash, currentPassword))) {
+      throw new BadRequestException("Your current password is incorrect");
+    }
+    await this.setPassword(userId, newPassword);
+    return { changed: true as const };
+  }
+
+  /**
+   * Recovery without the current password: control of the phone is proven by
+   * an SMS code instead (OtpService, purpose "reset"). This is also how an
+   * account created before passwords existed gets its first one.
+   */
+  async resetPassword(phone: string, verificationToken: string, password: string) {
+    await this.otp.assertPhoneVerified(verificationToken, phone, "reset");
+    const [user] = await this.db.select().from(users).where(eq(users.phone, phone)).limit(1);
+    if (!user) {
+      throw new NotFoundException(
+        "No account found for this phone number — please sign up first",
+      );
+    }
+    await this.setPassword(user.id, password);
+    return { reset: true as const };
   }
 
   async getCustomerMe(userId: string) {

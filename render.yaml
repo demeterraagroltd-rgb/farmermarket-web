@@ -40,6 +40,13 @@ services:
           property: connectionString
       - key: CORS_ORIGINS
         value: https://farmermarket-web-api.vercel.app,http://localhost:3000
+      # The customer-facing web app, used for the link in every transactional
+      # email (see apps/api/src/modules/notifications/links.ts). Keep it in
+      # step with CORS_ORIGINS above — they name the same deployment. Unset
+      # falls back to the same value, so a non-production environment MUST
+      # override it or its emails will point customers at production.
+      - key: WEB_BASE_URL
+        value: https://farmermarket-web-api.vercel.app
       # Cloudinary — media store for catalog images AND private KYC documents
       # (POST /v1/kyc/documents). Required now. Set the real value in the
       # Render dashboard. Format: cloudinary://<key>:<secret>@<cloud>

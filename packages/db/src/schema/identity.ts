@@ -12,7 +12,13 @@ import {
 } from "drizzle-orm/pg-core";
 
 // Customers — phone identity, distinct from staff (§6.1).
-// `loginCodeHash`: user-chosen 6-digit login code, set at Sign Up (argon2id).
+// `passwordHash`: the password chosen at Sign Up (argon2id). The column was
+// renamed from `login_code_hash` — a 6-digit code — when credentials became
+// real passwords; renaming rather than replacing keeps existing hashes, so
+// nobody is locked out by the change. A legacy row therefore still verifies
+// against its old code until the customer sets a password, and the new
+// policy (letters + digits, min length) is enforced on every password that
+// is created or changed from then on.
 // `txnPinHash`: user-chosen 4-digit transaction code, set on the first
 // order/repayment and required to authorize every transaction after.
 // `deactivatedAt`: soft-delete marker (§6.2 — admins can bar a customer).
@@ -24,7 +30,7 @@ export const users = pgTable("users", {
   phone: text("phone").notNull().unique(),
   fullName: text("full_name"),
   email: text("email"),
-  loginCodeHash: text("login_code_hash"),
+  passwordHash: text("password_hash"),
   txnPinHash: text("txn_pin_hash"),
   // Set when the applicant proves control of the phone via an SMS code at
   // Sign Up (§9 — Termii). Registration refuses to create an account until

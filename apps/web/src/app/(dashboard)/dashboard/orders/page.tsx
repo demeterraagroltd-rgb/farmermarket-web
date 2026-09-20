@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
-import { formatDateTime } from "../../../../lib/format";
+import { formatDate, formatDateTime } from "../../../../lib/format";
+import { pickupLabel } from "../../../../lib/orders";
 import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
 
@@ -22,7 +23,10 @@ interface Order {
   deliveryFee: number;
   serviceFee: number;
   total: number;
-  deliveryAddress: string;
+  pickupCenterName: string | null;
+  pickupCenterAddress: string | null;
+  pickupDate: string | null;
+  deliveryAddress: string | null;
   placedAt: string;
   estimatedDelivery: string | null;
   deliveredAt: string | null;
@@ -149,7 +153,10 @@ export default function OrdersPage() {
                   </div>
                   <p className="mt-1 text-sm font-semibold text-text-dark">{o.buyerName ?? "—"}</p>
                   <p className="text-xs text-text-muted">{o.buyerPhone ?? ""} · {formatDateTime(o.placedAt)}</p>
-                  <p className="mt-1 text-xs text-text-muted">{o.deliveryAddress}</p>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {pickupLabel(o) ?? "—"}
+                    {o.pickupDate ? ` · collect ${formatDate(o.pickupDate)}` : ""}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold tabular-nums text-primary">{NGN.format(o.total)}</p>

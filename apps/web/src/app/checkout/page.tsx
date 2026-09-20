@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
-import { Input } from "../../components/ui/Field";
+import { Input, Select } from "../../components/ui/Field";
 import { formatNairaAmount } from "../../lib/format";
 import { clearCart, getCart, totalsOf, type CartLine } from "../../lib/cart";
+import { usePickupCenters } from "../../lib/pickup-centers";
 import {
   accountFetch,
   getCustomerSession,
@@ -32,8 +33,9 @@ function planMath(plan: BnplPlan, total: number) {
 }
 
 // Mirrors the phone app's checkout: pick a BNPL plan (GET /v1/catalog/bnpl-
-// plans), enter a delivery address, authorize with the 4-digit transaction
-// code (creating one first if this is the account's first order — see
+// plans), choose the pickup centre and date you'll collect from, authorize
+// with the 4-digit transaction code (creating one first if this is the
+// account's first order — see
 // lib/features/auth/presentation/widgets/transaction_pin_sheet.dart for the
 // pattern this follows), then POST /v1/orders. The server re-prices and
 // re-checks verification independently of anything shown here.
@@ -43,7 +45,9 @@ export default function CheckoutPage() {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [plans, setPlans] = useState<BnplPlan[] | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [address, setAddress] = useState("");
+  const { centers, error: centersError } = usePickupCenters();
+  const [pickupCenterId, setPickupCenterId] = useState("");
+  const [pickupDate, setPickupDate] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -94,12 +98,20 @@ export default function CheckoutPage() {
   const selectedPlan = plans?.find((p) => p.id === selectedPlanId) ?? null;
   const math = selectedPlan ? planMath(selectedPlan, totals.total) : null;
   const needsNewPin = !session.hasTxnPin;
+  const selectedCenter = centers?.find((c) => c.id === pickupCenterId) ?? null;
+  // <input type="date"> speaks yyyy-mm-dd, and en-CA is the one locale that
+  // formats a Date that way without hand-rolling the zero-padding.
+  const today = new Date().toLocaleDateString("en-CA");
 
   async function handlePlaceOrder() {
     setError(null);
 
-    if (!address.trim()) {
-      setError("Enter a delivery address.");
+    if (!pickupCenterId) {
+      setError("Choose where you'll collect your order.");
+      return;
+    }
+    if (!pickupDate) {
+      setError("Choose a pickup date.");
       return;
     }
     if (!selectedPlan) {
@@ -130,7 +142,8 @@ export default function CheckoutPage() {
         method: "POST",
         body: JSON.stringify({
           items: lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
-          deliveryAddress: address.trim(),
+          pickupCenterId,
+          pickupDate,
           bnplPlanId: selectedPlan.id,
           txnPin: pin,
         }),
@@ -164,14 +177,40 @@ export default function CheckoutPage() {
             </p>
           </Card>
 
-          <div className="mt-5">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Pickup centre"
+              value={pickupCenterId}
+              onChange={(e) => setPickupCenterId(e.target.value)}
+              disabled={centers === null}
+              required
+            >
+              <option value="">{centers === null ? "Loading centres…" : "Choose a centre"}</option>
+              {(centers ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
             <Input
-              label="Delivery address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Street, city, state"
+              label="Pickup date"
+              type="date"
+              min={today}
+              value={pickupDate}
+              onChange={(e) => setPickupDate(e.target.value)}
               required
             />
+            {selectedCenter && (
+              <p className="text-xs text-text-muted sm:col-span-2">{selectedCenter.address}</p>
+            )}
+            {centersError && (
+              <p className="text-xs text-error sm:col-span-2">{centersError}</p>
+            )}
+            {centers?.length === 0 && (
+              <p className="text-xs text-error sm:col-span-2">
+                No pickup centres are open yet — check back shortly.
+              </p>
+            )}
           </div>
 
           <div className="mt-6">

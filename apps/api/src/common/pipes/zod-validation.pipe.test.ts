@@ -32,7 +32,7 @@ describe("ZodValidationPipe", () => {
       fullName: "Ada",
       phone: "08012345678",
       email: "ada@example.com",
-      loginCode: "123456",
+      password: "FM2026Ab92",
       salaryDay: 45,
     });
     expect(body.fieldErrors.salaryDay).toEqual([
@@ -46,7 +46,7 @@ describe("ZodValidationPipe", () => {
       fullName: "Ada",
       phone: "123",
       email: "ada@example.com",
-      loginCode: "123456",
+      password: "FM2026Ab92",
     });
     expect(body.fieldErrors.phone).toEqual(["Phone number must be at least 6 characters."]);
   });
@@ -56,13 +56,13 @@ describe("ZodValidationPipe", () => {
       fullName: "Ada",
       phone: "123",
       email: "not-an-email",
-      loginCode: "12",
+      password: "Abcdefgh", // long enough and a letter, but no digit → one failure
       salaryDay: 45,
       phoneVerificationToken: "tok", // present so it isn't itself an error
     });
     expect(Object.keys(body.fieldErrors).sort()).toEqual([
       "email",
-      "loginCode",
+      "password",
       "phone",
       "salaryDay",
     ]);
@@ -74,7 +74,7 @@ describe("ZodValidationPipe", () => {
       fullName: "Ada",
       phone: "08012345678",
       email: "ada@example.com",
-      loginCode: "123456",
+      password: "FM2026Ab92",
       bvn: "123",
     });
     expect(body.fieldErrors.bvn).toEqual(["BVN must be 11 digits"]);
@@ -91,7 +91,7 @@ describe("ZodValidationPipe", () => {
       fullName: "Ada",
       phone: "08012345678",
       email: "nope",
-      loginCode: "123456",
+      password: "FM2026Ab92",
     });
     expect(body.fieldErrors.email).toEqual(["Email address must be a valid email address."]);
   });
@@ -99,7 +99,8 @@ describe("ZodValidationPipe", () => {
   it("points at the offending line of an order rather than an array index", () => {
     const body = errorBodyFor(createOrderSchema, {
       items: [{ productId: "9dcb9f2e-2c9f-4d1e-8b0f-7a1f5e6c1a11", quantity: 0 }],
-      deliveryAddress: "1 Test Road, Ikeja",
+      pickupCenterId: "5cfd2942-d4c2-4797-903b-b15c4aa6c9db",
+      pickupDate: "2026-09-25",
       bnplPlanId: "5cfd2942-d4c2-4797-903b-b15c4aa6c9da",
       txnPin: "1234",
     });
@@ -126,7 +127,7 @@ describe("ZodValidationPipe", () => {
       fullName: "Ada",
       phone: "08012345678",
       email: "ada@example.com",
-      loginCode: "123456",
+      password: "FM2026Ab92",
       employmentType: "Freelance",
     });
     expect(body.fieldErrors.employmentType?.[0]).toBe(
