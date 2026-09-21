@@ -14,5 +14,7 @@ import { OrderReviewService } from "./order-review.service";
   imports: [AuthModule, LedgerModule, KycModule, WalletModule],
   controllers: [OrdersController, AdminOrdersController],
   providers: [OrdersService, OrderReviewService],
+  // The Customer 360 page reads a customer's orders through this.
+  exports: [OrdersService],
 })
 export class OrdersModule {}

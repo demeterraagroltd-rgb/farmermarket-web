@@ -36,9 +36,15 @@ import {
   type IdentityRecord,
   type LookupClient,
 } from "../integrations/mono-lookup/lookup.types";
-import { analyseBank } from "./bank-analysis";
+import { analyseBank, type BankAnalysis } from "./bank-analysis";
 import { matchIdentity } from "./identity-match";
-import type { RegisterInput, UpdateKycInput, ReviewDocumentInput, VerifyKycInput } from "./dto/kyc.dto";
+import type {
+  RegisterInput,
+  UpdateKycInput,
+  ReviewDocumentInput,
+  StaffProfileEditInput,
+  VerifyKycInput,
+} from "./dto/kyc.dto";
 
 const CUSTOMER_ACCESS_TOKEN_TTL = "30d";
 
@@ -71,6 +77,12 @@ const BVN_CONSENT_TTL_MS = 10 * 60 * 1000;
 // real request to Mono/NIBSS on every tap, which costs money on the real
 // client and can read as abuse to NIBSS.
 const BVN_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+
+// Minimum gap between admin-triggered Mono pulls for one customer. A crude
+// guard against a double-click or an impatient re-click hammering Mono; the
+// freshness policy that replaces it decides *whether* a refresh is warranted at
+// all, rather than just spacing them out.
+const ADMIN_BANK_REFRESH_COOLDOWN_MS = 60 * 1000;
 
 type ProfileWrite = Partial<typeof applicantProfiles.$inferInsert>;
 
@@ -254,7 +266,7 @@ export class KycService {
       .set({ monoAccountId: accountId, bankLinkedAt: new Date(), updatedAt: new Date() })
       .where(eq(applicantProfiles.userId, userId));
 
-    const analysis = await this.pullAndStoreBankAnalysis(userId, accountId, profile.employer);
+    const { analysis } = await this.pullAndStoreBankAnalysis(userId, accountId, profile.employer);
     return { linked: true as const, analysisReady: analysis.source !== "unavailable", analysis };
   }
 
@@ -287,6 +299,22 @@ export class KycService {
       employer,
     });
 
+    // Mono returning nothing usable (an outage, an unentitled product, a
+    // disconnected account) must not erase what we already learned. Keep the
+    // last good analysis and say the refresh didn't take, rather than
+    // replacing months of income evidence with an empty "unavailable".
+    if (analysis.source === "unavailable") {
+      const [existing] = await this.db
+        .select({ bankAnalysis: applicantProfiles.bankAnalysis })
+        .from(applicantProfiles)
+        .where(eq(applicantProfiles.userId, userId))
+        .limit(1);
+      const previous = existing?.bankAnalysis as BankAnalysis | null | undefined;
+      if (previous && previous.source !== "unavailable") {
+        return { analysis: previous, preserved: true as const };
+      }
+    }
+
     await this.db
       .update(applicantProfiles)
       .set({
@@ -297,7 +325,7 @@ export class KycService {
       })
       .where(eq(applicantProfiles.userId, userId));
 
-    return analysis;
+    return { analysis, preserved: false as const };
   }
 
   // ── Buyer: documents ────────────────────────────────────────────────────
@@ -374,7 +402,7 @@ export class KycService {
     }));
   }
 
-  async getForStaff(staffId: string, userId: string) {
+  async getForStaff(staffId: string, userId: string, opts: { audit?: boolean } = {}) {
     const profile = await this.getProfileRow(userId);
     const docs = await this.db
       .select()
@@ -387,12 +415,16 @@ export class KycService {
       .where(eq(kycEvents.userId, userId))
       .orderBy(desc(kycEvents.createdAt));
 
-    await this.db.insert(auditLogs).values({
-      actorStaffId: staffId,
-      action: "kyc.view",
-      targetType: "user",
-      targetId: userId,
-    });
+    // The Customer 360 page records its own "customer.viewed" row and reads
+    // this with { audit: false }, so opening one customer isn't logged twice.
+    if (opts.audit !== false) {
+      await this.db.insert(auditLogs).values({
+        actorStaffId: staffId,
+        action: "kyc.view",
+        targetType: "user",
+        targetId: userId,
+      });
+    }
 
     return {
       profile: { ...this.publicProfile(profile), bvnLast4: profile.bvnLast4 },
@@ -402,6 +434,86 @@ export class KycService {
       })),
       events,
     };
+  }
+
+  // ── Staff: correct declared facts / refresh bank data (Customer 360) ────
+
+  /**
+   * A staff member correcting the customer's *declared* application facts —
+   * employment, address, household. Identity-defining fields aren't accepted
+   * (see staffProfileEditSchema). Audited with what changed; for the plain
+   * employment facts the old and new value, for address and next of kin only
+   * that they changed, so the audit trail doesn't become a second copy of PII.
+   */
+  async updateProfileAsStaff(staffId: string, userId: string, input: StaffProfileEditInput) {
+    const before = await this.getProfileRow(userId);
+    const write = await this.toProfileWrite(input);
+    if (Object.keys(write).length === 0) throw new BadRequestException("Nothing to change");
+
+    await this.db
+      .update(applicantProfiles)
+      .set({ ...write, updatedAt: new Date() })
+      .where(eq(applicantProfiles.userId, userId));
+
+    const previous: Record<string, unknown> = {
+      employmentType: before.employmentType,
+      employer: before.employer,
+      jobTitle: before.jobTitle,
+      netMonthlySalaryNaira: before.netMonthlySalaryKobo == null ? null : Number(before.netMonthlySalaryKobo) / 100,
+      salaryDay: before.salaryDay,
+      yearsEmployed: before.yearsEmployed,
+      maritalStatus: before.maritalStatus,
+      dependantsCount: before.dependantsCount,
+    };
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const [key, to] of Object.entries(input)) {
+      if (key in previous) changes[key] = { from: previous[key] ?? null, to };
+    }
+    await this.db.insert(auditLogs).values({
+      actorStaffId: staffId,
+      action: "customer.profile_edited",
+      targetType: "user",
+      targetId: userId,
+      metadata: { fields: Object.keys(input), changes },
+    });
+    return this.getForStaff(staffId, userId, { audit: false });
+  }
+
+  /**
+   * "Refresh bank data" from the admin screen: re-pull an already-linked
+   * account. Never asks the customer to reconnect — the Mono account id is a
+   * standing authorisation until they revoke it. If Mono returns nothing
+   * usable the last good analysis is kept (see pullAndStoreBankAnalysis).
+   */
+  async refreshBankDataForStaff(staffId: string, userId: string) {
+    const profile = await this.getProfileRow(userId);
+    if (!profile.monoAccountId) {
+      throw new BadRequestException("This customer hasn't linked a bank account, so there's nothing to refresh.");
+    }
+    const last = (profile.bankAnalysis as BankAnalysis | null)?.pulledAt;
+    if (last) {
+      const sinceMs = Date.now() - Date.parse(last);
+      if (Number.isFinite(sinceMs) && sinceMs < ADMIN_BANK_REFRESH_COOLDOWN_MS) {
+        const wait = Math.ceil((ADMIN_BANK_REFRESH_COOLDOWN_MS - sinceMs) / 1000);
+        throw new HttpException(
+          `Bank data was refreshed a moment ago — try again in ${wait}s.`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
+    const { analysis, preserved } = await this.pullAndStoreBankAnalysis(
+      userId,
+      profile.monoAccountId,
+      profile.employer,
+    );
+    await this.db.insert(auditLogs).values({
+      actorStaffId: staffId,
+      action: "customer.bank_data_refreshed",
+      targetType: "user",
+      targetId: userId,
+      metadata: { source: analysis.source, keptPreviousData: preserved },
+    });
+    return { refreshed: !preserved, keptPreviousData: preserved, analysis };
   }
 
   /**

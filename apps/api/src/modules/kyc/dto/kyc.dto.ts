@@ -111,6 +111,28 @@ export const kycProfileFields = {
 export const updateKycSchema = z.object(kycProfileFields);
 export type UpdateKycInput = z.infer<typeof updateKycSchema>;
 
+// What a staff member may correct on a customer's file from the Customer 360
+// page: the *declared* application facts. Identity-derived and identity-
+// defining fields are left out on purpose — name, phone, email, date of birth,
+// gender, BVN and NIN are what the government-record checks compare against,
+// so letting an admin overwrite them would let a mismatch be edited away
+// instead of investigated.
+export const staffProfileEditSchema = z
+  .object({
+    employmentType: kycProfileFields.employmentType,
+    employer: kycProfileFields.employer,
+    jobTitle: kycProfileFields.jobTitle,
+    netMonthlySalaryNaira: kycProfileFields.netMonthlySalaryNaira,
+    salaryDay: kycProfileFields.salaryDay,
+    yearsEmployed: kycProfileFields.yearsEmployed,
+    residentialAddress: kycProfileFields.residentialAddress,
+    maritalStatus: kycProfileFields.maritalStatus,
+    dependantsCount: kycProfileFields.dependantsCount,
+    nextOfKin: kycProfileFields.nextOfKin,
+  })
+  .strict(); // an unknown key (say, "bvn") is a 400, not silently dropped
+export type StaffProfileEditInput = z.infer<typeof staffProfileEditSchema>;
+
 // Registration = login credentials + as much of the profile as they filled.
 // Profile fields first so the required login fields below win the merge.
 export const registerSchema = z.object({

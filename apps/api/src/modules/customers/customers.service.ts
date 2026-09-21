@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   users,
   creditProfiles,
@@ -17,16 +17,27 @@ import {
   type Db,
 } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
+import type { IdentityCheck } from "../kyc/identity-match";
+import {
+  bankConnectionState,
+  employmentState,
+  freshnessOf,
+  identityStatuses,
+  lastFinancialSync,
+} from "./customer-360";
 
 @Injectable()
 export class CustomersService {
   constructor(@Inject(DB) private readonly db: Db) {}
 
-  // The 360° view (§11.4) is much bigger than this — profile, order
-  // history, repayment behaviour, all applications, notes. This is just
-  // "who has an account, and what's their credit limit right now."
+  // One row per customer with the statuses an admin scans for: KYC, BVN/NIN
+  // verification, bank connection, employment, last financial sync. Every
+  // status is derived (customer-360.ts) from data already on the row — the list
+  // never calls Mono — and the heavy JSON (bank analysis, identity check) is
+  // reduced to those statuses here rather than shipped to the browser. The full
+  // picture for one customer is Customer360Service.getDetail.
   async findAll() {
-    return this.db
+    const rows = await this.db
       .select({
         id: users.id,
         phone: users.phone,
@@ -39,10 +50,77 @@ export class CustomersService {
         usedCreditKobo: creditProfiles.usedCreditKobo,
         tier: creditProfiles.tier,
         isVerified: creditProfiles.isVerified,
+        verificationStatus: applicantProfiles.verificationStatus,
+        hasBvn: sql<boolean>`${applicantProfiles.bvnHash} IS NOT NULL`,
+        hasNin: sql<boolean>`${applicantProfiles.nin} IS NOT NULL`,
+        identityLookup: applicantProfiles.identityLookup,
+        monoAccountId: applicantProfiles.monoAccountId,
+        bankLinkRequestedAt: applicantProfiles.bankLinkRequestedAt,
+        bankLinkedAt: applicantProfiles.bankLinkedAt,
+        bankAnalysis: applicantProfiles.bankAnalysis,
+        employmentType: applicantProfiles.employmentType,
+        employer: applicantProfiles.employer,
+        jobTitle: applicantProfiles.jobTitle,
+        netMonthlySalaryKobo: applicantProfiles.netMonthlySalaryKobo,
       })
       .from(users)
       .leftJoin(creditProfiles, eq(creditProfiles.userId, users.id))
+      .leftJoin(applicantProfiles, eq(applicantProfiles.userId, users.id))
       .orderBy(desc(users.createdAt));
+
+    const now = new Date();
+    return rows.map((r) => {
+      const analysis = (r.bankAnalysis ?? null) as { pulledAt?: string } | null;
+      const identity = identityStatuses({
+        hasBvn: !!r.hasBvn,
+        hasNin: !!r.hasNin,
+        identityLookup: (r.identityLookup ?? null) as IdentityCheck | null,
+      });
+      const lastSyncAt = lastFinancialSync({ bankAnalysis: analysis, bankLinkedAt: r.bankLinkedAt });
+      return {
+        id: r.id,
+        phone: r.phone,
+        fullName: r.fullName,
+        email: r.email,
+        createdAt: r.createdAt,
+        deactivatedAt: r.deactivatedAt,
+        deactivatedReason: r.deactivatedReason,
+        accountStatus: r.deactivatedAt ? ("suspended" as const) : ("active" as const),
+        creditLimitKobo: r.creditLimitKobo,
+        usedCreditKobo: r.usedCreditKobo,
+        tier: r.tier,
+        isVerified: r.isVerified,
+        // null for a customer with no KYC profile at all (an older account).
+        kycStatus: r.verificationStatus ?? null,
+        bvnStatus: identity.bvn.state,
+        ninStatus: identity.nin.state,
+        bankState: bankConnectionState({
+          monoAccountId: r.monoAccountId,
+          bankLinkRequestedAt: r.bankLinkRequestedAt,
+        }),
+        employmentState: employmentState({
+          employmentType: r.employmentType,
+          employer: r.employer,
+          jobTitle: r.jobTitle,
+          netMonthlySalaryKobo: r.netMonthlySalaryKobo,
+        }),
+        lastFinancialSyncAt: lastSyncAt,
+        freshness: freshnessOf(lastSyncAt, now).state,
+      };
+    });
+  }
+
+  /**
+   * Bar a customer from signing in without deleting anything. Unlike
+   * {@link remove} this never purges: a prospect with no orders is suspended,
+   * not erased, so "Suspend" is always reversible with "Activate".
+   */
+  async suspend(id: string, staffId: string, reason?: string) {
+    const [user] = await this.db.select().from(users).where(eq(users.id, id)).limit(1);
+    if (!user) throw new NotFoundException("Customer not found");
+    if (user.deactivatedAt) throw new ConflictException("This account is already suspended");
+    await this.deactivate(id, staffId, reason, "customer.suspended");
+    return { id, outcome: "suspended" as const };
   }
 
   /**
@@ -79,6 +157,19 @@ export class CustomersService {
       return { id, outcome: "purged" as const };
     }
 
+    await this.deactivate(id, staffId, reason, "customer.deactivated");
+    return { id, outcome: "deactivated" as const };
+  }
+
+  // Shared by remove() (a customer with history) and suspend(): stop the
+  // account signing in and kill any live session, in one transaction, with the
+  // audit row naming which of the two the admin actually asked for.
+  private async deactivate(
+    id: string,
+    staffId: string,
+    reason: string | undefined,
+    action: "customer.deactivated" | "customer.suspended",
+  ) {
     await this.db.transaction(async (tx) => {
       await tx
         .update(users)
@@ -95,13 +186,12 @@ export class CustomersService {
         .where(and(eq(sessions.userId, id), isNull(sessions.revokedAt)));
       await tx.insert(auditLogs).values({
         actorStaffId: staffId,
-        action: "customer.deactivated",
+        action,
         targetType: "user",
         targetId: id,
         metadata: reason ? { reason } : undefined,
       });
     });
-    return { id, outcome: "deactivated" as const };
   }
 
   // Every FK to users.id is ON DELETE NO ACTION, so children come out first,

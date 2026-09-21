@@ -80,7 +80,8 @@ export function CommandPalette({ nav }: { nav: NavItem[] }) {
         kind: "customer",
         label: c.fullName || c.phone,
         sublabel: `${c.phone} · ${c.isVerified ? "verified" : "unverified"}`,
-        href: `/dashboard/kyc/${c.id}`,
+        // The Customer 360 page (which links on to KYC review), not straight to KYC.
+        href: `/dashboard/customers/${c.id}`,
       }));
 
     return [...navHits, ...custHits];
