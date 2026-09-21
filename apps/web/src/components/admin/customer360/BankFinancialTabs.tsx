@@ -3,9 +3,16 @@
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
-import { formatDate, formatNaira } from "../../../lib/format";
+import { formatDate, formatDateTime, formatNaira } from "../../../lib/format";
+import {
+  ACCOUNT_STATUS_LABEL,
+  ACCOUNT_STATUS_TONE,
+  SYNC_STATUS_TONE,
+  SYNC_TRIGGER_LABEL,
+  timeAgo,
+} from "../../../lib/customer360";
 import { BankAnalysisView } from "../kyc-review";
-import { Row, Section, FreshnessBadge, NotStoredYet, Updated, type TabProps } from "./parts";
+import { DataTable, Row, Section, FreshnessBadge, NotStoredYet, Td, Updated, type TabProps } from "./parts";
 import { useBankRefresh } from "./useBankRefresh";
 
 // ── Bank accounts ─────────────────────────────────────────────────────────
@@ -55,7 +62,10 @@ export function BankTab({ data, reload, goTab }: TabProps) {
               <Row label="Balance" value={a.balanceKobo == null ? null : formatNaira(a.balanceKobo)} origin="bank" />
             </div>
             <div>
-              <Row label="Connection" value={<Badge tone="success">Connected</Badge>} />
+              <Row
+                label="Connection"
+                value={<Badge tone={ACCOUNT_STATUS_TONE[a.status]}>{ACCOUNT_STATUS_LABEL[a.status]}</Badge>}
+              />
               <Row label="Linked" value={a.linkedAt ? formatDate(a.linkedAt) : null} />
               <Row
                 label="Last sync"
@@ -93,6 +103,41 @@ export function BankTab({ data, reload, goTab }: TabProps) {
           </p>
         </Section>
       ))}
+
+      <Section
+        title="Sync history"
+        description="Every attempt to reach Mono for this customer, failures included — the answer to “why is this data stale?”"
+      >
+        {bank.syncHistory.length === 0 ? (
+          <p className="text-sm text-text-muted">
+            No syncs recorded yet. Data linked before sync logging began shows here from its next refresh.
+          </p>
+        ) : (
+          <DataTable head={["When", "Trigger", "Result", "Transactions", "Took", "Detail"]}>
+            {bank.syncHistory.map((s) => (
+              <tr key={s.id}>
+                <Td className="whitespace-nowrap text-text-medium" >
+                  <span title={formatDateTime(s.startedAt)}>{timeAgo(s.startedAt)}</span>
+                </Td>
+                <Td className="text-text-dark">
+                  {SYNC_TRIGGER_LABEL[s.trigger]}
+                  {s.triggeredBy && <span className="text-text-muted"> · {s.triggeredBy}</span>}
+                </Td>
+                <Td>
+                  <Badge tone={SYNC_STATUS_TONE[s.status]}>{s.status}</Badge>
+                </Td>
+                <Td className="tabular-nums text-text-medium">
+                  {s.transactionsFetched} fetched · {s.transactionsInserted} new
+                </Td>
+                <Td className="tabular-nums text-text-muted">
+                  {s.durationMs == null ? "—" : `${(s.durationMs / 1000).toFixed(1)}s`}
+                </Td>
+                <Td className="max-w-[280px] text-xs text-error">{s.error ?? ""}</Td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
+      </Section>
     </div>
   );
 }

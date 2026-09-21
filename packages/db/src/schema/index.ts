@@ -8,3 +8,4 @@ export * from "./ops.js";
 export * from "./commerce.js";
 export * from "./kyc.js";
 export * from "./inbox.js";
+export * from "./mono.js";

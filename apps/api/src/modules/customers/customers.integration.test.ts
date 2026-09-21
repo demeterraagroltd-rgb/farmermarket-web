@@ -18,6 +18,7 @@ import {
 } from "@farmermarket/db";
 import { createTestDb, type TestDb } from "../../test/test-db";
 import { KycService } from "../kyc/kyc.service";
+import { MonoSyncService } from "../mono-data/mono-sync.service";
 import { WalletService } from "../wallet/wallet.service";
 import { OrdersService } from "../orders/orders.service";
 import { CustomersService } from "./customers.service";
@@ -46,7 +47,7 @@ describe("Customer 360 (real Postgres)", () => {
   beforeAll(async () => {
     t = await createTestDb();
     db = t.db;
-    const kyc = new KycService(db, any, any, any, any, any);
+    const kyc = new KycService(db, any, any, any, any, any, new MonoSyncService(db, any));
     const wallet = new WalletService(db, any, any, any);
     const ordersSvc = new OrdersService(db, any, any, kyc, any);
     customers = new CustomersService(db);

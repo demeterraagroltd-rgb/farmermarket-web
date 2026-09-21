@@ -190,10 +190,22 @@ export interface Customer360 {
       accountMasked: string | null;
       currency: string;
       balanceKobo: number | null;
-      status: "connected";
+      status: "connected" | "disconnected" | "reauth_required";
       linkedAt: string | null;
       lastSyncAt: string | null;
       freshness: Freshness;
+    }>;
+    /** The last ten attempts to reach Mono, failures included. */
+    syncHistory: Array<{
+      id: string;
+      trigger: "link" | "customer" | "admin" | "webhook" | "system";
+      status: "success" | "partial" | "failed" | "skipped";
+      startedAt: string;
+      durationMs: number | null;
+      transactionsFetched: number;
+      transactionsInserted: number;
+      error: string | null;
+      triggeredBy: string | null;
     }>;
   };
   financial: {
@@ -316,6 +328,31 @@ export const EMPLOYMENT_TONE: Record<EmploymentState, Tone> = {
   partial: "warning",
   not_provided: "neutral",
 };
+
+export const ACCOUNT_STATUS_LABEL = {
+  connected: "Connected",
+  disconnected: "Disconnected",
+  reauth_required: "Needs re-sign-in",
+} as const;
+export const ACCOUNT_STATUS_TONE = {
+  connected: "success",
+  disconnected: "error",
+  reauth_required: "warning",
+} as const;
+
+export const SYNC_STATUS_TONE = {
+  success: "success",
+  partial: "warning",
+  failed: "error",
+  skipped: "neutral",
+} as const;
+export const SYNC_TRIGGER_LABEL = {
+  link: "Customer linked account",
+  customer: "Customer",
+  admin: "Staff refresh",
+  webhook: "Mono notification",
+  system: "Scheduled",
+} as const;
 
 export const FRESHNESS_LABEL: Record<FreshnessState, string> = {
   fresh: "Fresh",

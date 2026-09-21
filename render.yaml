@@ -101,6 +101,12 @@ services:
       # under another. Unset ⇒ that check just isn't offered.
       - key: BVN_ENCRYPTION_KEY
         sync: false
+      # Mono raw responses — an audit copy of what Mono sent (holder name, balances,
+      # a year of transactions), encrypted, deleted after 90 days. A separate key
+      # from BVN_ENCRYPTION_KEY. Same value as anywhere else that writes this
+      # database. Unset => raw responses simply aren't stored; nothing else changes.
+      - key: MONO_RAW_ENCRYPTION_KEY
+        sync: false
       # Inbox — reads and replies to admin@farmermarket.ng inside the
       # dashboard (§ staff Inbox section). IMAP for receiving, SMTP for
       # sending; most hosts (Zoho, cPanel, Google Workspace) use the same

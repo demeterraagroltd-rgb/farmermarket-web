@@ -15,7 +15,18 @@ export interface MonoAccountDetails {
   institution: string | null;
 }
 
+/**
+ * Called by a client with the provider's response body for one endpoint, so
+ * the caller can keep the original for audit. Optional everywhere: a caller
+ * that only wants the normalised data passes nothing.
+ */
+export type RawCapture = (endpoint: "account_details" | "transactions" | "income", raw: unknown) => void;
+
 export interface MonoTransaction {
+  /** Mono's id for the transaction; null if a response ever omits it. */
+  id: string | null;
+  /** Mono's own channel label (transfer, atm, …) — not our classification. */
+  category: string | null;
   amountKobo: number;
   /** "credit" (money in) | "debit" (money out) */
   type: "credit" | "debit";
@@ -39,11 +50,11 @@ export interface MonoClient {
   /** Swap a Connect widget `code` for a permanent account id (POST /v2/accounts/auth). */
   exchangeToken(code: string): Promise<{ accountId: string }>;
 
-  getAccountDetails(accountId: string): Promise<MonoAccountDetails>;
+  getAccountDetails(accountId: string, capture?: RawCapture): Promise<MonoAccountDetails>;
 
   /** Up to `months` of history, newest first. Empty array if none. */
-  getTransactions(accountId: string, months: number): Promise<MonoTransaction[]>;
+  getTransactions(accountId: string, months: number, capture?: RawCapture): Promise<MonoTransaction[]>;
 
   /** Mono income insights — null when the product isn't enabled or has no data. */
-  getIncome(accountId: string): Promise<MonoIncome | null>;
+  getIncome(accountId: string, capture?: RawCapture): Promise<MonoIncome | null>;
 }

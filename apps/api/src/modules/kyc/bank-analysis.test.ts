@@ -9,8 +9,10 @@ function salaryHistory(months: number, amountKobo: number, narration = "SALARY -
   const out: MonoTransaction[] = [];
   for (let m = 0; m < months; m++) {
     const d = new Date(now.getFullYear(), now.getMonth() - m, 26);
-    out.push({ amountKobo, type: "credit", narration, date: d.toISOString(), balanceKobo: null });
+    out.push({ id: null, category: null, amountKobo, type: "credit", narration, date: d.toISOString(), balanceKobo: null });
     out.push({
+      id: null,
+      category: null,
       amountKobo: 800_000,
       type: "debit",
       narration: "TRANSFER",
@@ -66,8 +68,8 @@ describe("analyseBank", () => {
   it("does not call an irregular trickle of credits a salary", () => {
     const now = new Date();
     const txns: MonoTransaction[] = [
-      { amountKobo: 500_000, type: "credit", narration: "TRANSFER FROM MUM", date: new Date(now.getFullYear(), now.getMonth(), 3).toISOString(), balanceKobo: null },
-      { amountKobo: 1_200_000, type: "credit", narration: "REFUND", date: new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString(), balanceKobo: null },
+      { id: null, category: null, amountKobo: 500_000, type: "credit", narration: "TRANSFER FROM MUM", date: new Date(now.getFullYear(), now.getMonth(), 3).toISOString(), balanceKobo: null },
+      { id: null, category: null, amountKobo: 1_200_000, type: "credit", narration: "REFUND", date: new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString(), balanceKobo: null },
     ];
     const a = analyseBank(null, txns, { ...META, employer: "Acme" });
     expect(a.salaryDetected).toBe(false);

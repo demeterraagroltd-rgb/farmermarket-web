@@ -13,6 +13,7 @@ import { canonicalLga, isValidStateLgaPair, nairaToKobo } from "@farmermarket/co
 import {
   applicantProfiles,
   auditLogs,
+  bankAccounts,
   creditProfiles,
   kycDocuments,
   kycEvents,
@@ -36,7 +37,9 @@ import {
   type IdentityRecord,
   type LookupClient,
 } from "../integrations/mono-lookup/lookup.types";
-import { analyseBank, type BankAnalysis } from "./bank-analysis";
+import type { BankAnalysis } from "./bank-analysis";
+import { MonoSyncService } from "../mono-data/mono-sync.service";
+import { recordIdentityVerification } from "../mono-data/identity-verifications";
 import { matchIdentity } from "./identity-match";
 import type {
   RegisterInput,
@@ -95,6 +98,7 @@ export class KycService {
     private readonly otp: OtpService,
     @Inject(MONO_CLIENT) private readonly mono: MonoClient,
     @Inject(LOOKUP_CLIENT) private readonly lookup: LookupClient,
+    private readonly monoSync: MonoSyncService,
   ) {}
 
   /**
@@ -258,74 +262,39 @@ export class KycService {
    * data wasn't ready at link time.
    */
   async linkBank(userId: string, code: string) {
-    const profile = await this.getProfileRow(userId); // 404 if no account
+    await this.getProfileRow(userId); // 404 if no account
     const { accountId } = await this.mono.exchangeToken(code);
+
+    // Before recording anything: one bank account can't belong to two customers.
+    await this.monoSync.assertAccountAvailable(userId, accountId);
 
     await this.db
       .update(applicantProfiles)
       .set({ monoAccountId: accountId, bankLinkedAt: new Date(), updatedAt: new Date() })
       .where(eq(applicantProfiles.userId, userId));
 
-    const { analysis } = await this.pullAndStoreBankAnalysis(userId, accountId, profile.employer);
+    const { analysis } = await this.monoSync.sync({ userId, monoAccountId: accountId, trigger: "link" });
     return { linked: true as const, analysisReady: analysis.source !== "unavailable", analysis };
   }
 
   /** Webhook path: Mono says an account's data changed — re-pull and re-store. */
   async refreshBankAnalysisByAccount(monoAccountId: string) {
-    const [profile] = await this.db
-      .select()
-      .from(applicantProfiles)
-      .where(eq(applicantProfiles.monoAccountId, monoAccountId))
+    // Known by the bank_accounts table, or — for an account linked before that
+    // table existed — by the legacy profile column.
+    const [account] = await this.db
+      .select({ userId: bankAccounts.userId })
+      .from(bankAccounts)
+      .where(eq(bankAccounts.monoAccountId, monoAccountId))
       .limit(1);
+    const [profile] = account
+      ? [{ userId: account.userId }]
+      : await this.db
+          .select({ userId: applicantProfiles.userId })
+          .from(applicantProfiles)
+          .where(eq(applicantProfiles.monoAccountId, monoAccountId))
+          .limit(1);
     if (!profile) return; // an account we don't track — ignore
-    await this.pullAndStoreBankAnalysis(profile.userId, monoAccountId, profile.employer);
-  }
-
-  private async pullAndStoreBankAnalysis(
-    userId: string,
-    accountId: string,
-    employer: string | null,
-  ) {
-    const [details, income, transactions] = await Promise.all([
-      this.mono.getAccountDetails(accountId).catch(() => null),
-      this.mono.getIncome(accountId).catch(() => null),
-      this.mono.getTransactions(accountId, 6).catch(() => [] as Awaited<ReturnType<MonoClient["getTransactions"]>>),
-    ]);
-
-    const analysis = analyseBank(income, transactions, {
-      accountName: details?.name ?? null,
-      institution: details?.institution ?? null,
-      balanceKobo: details?.balanceKobo ?? null,
-      employer,
-    });
-
-    // Mono returning nothing usable (an outage, an unentitled product, a
-    // disconnected account) must not erase what we already learned. Keep the
-    // last good analysis and say the refresh didn't take, rather than
-    // replacing months of income evidence with an empty "unavailable".
-    if (analysis.source === "unavailable") {
-      const [existing] = await this.db
-        .select({ bankAnalysis: applicantProfiles.bankAnalysis })
-        .from(applicantProfiles)
-        .where(eq(applicantProfiles.userId, userId))
-        .limit(1);
-      const previous = existing?.bankAnalysis as BankAnalysis | null | undefined;
-      if (previous && previous.source !== "unavailable") {
-        return { analysis: previous, preserved: true as const };
-      }
-    }
-
-    await this.db
-      .update(applicantProfiles)
-      .set({
-        bankAnalysis: analysis,
-        bankName: details?.institution ?? undefined,
-        accountLast4: details?.accountNumberLast4 ?? undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(applicantProfiles.userId, userId));
-
-    return { analysis, preserved: false as const };
+    await this.monoSync.sync({ userId: profile.userId, monoAccountId, trigger: "webhook" });
   }
 
   // ── Buyer: documents ────────────────────────────────────────────────────
@@ -483,17 +452,27 @@ export class KycService {
    * "Refresh bank data" from the admin screen: re-pull an already-linked
    * account. Never asks the customer to reconnect — the Mono account id is a
    * standing authorisation until they revoke it. If Mono returns nothing
-   * usable the last good analysis is kept (see pullAndStoreBankAnalysis).
+   * usable the last good analysis is kept (see MonoSyncService).
    */
   async refreshBankDataForStaff(staffId: string, userId: string) {
     const profile = await this.getProfileRow(userId);
     if (!profile.monoAccountId) {
       throw new BadRequestException("This customer hasn't linked a bank account, so there's nothing to refresh.");
     }
-    const last = (profile.bankAnalysis as BankAnalysis | null)?.pulledAt;
-    if (last) {
-      const sinceMs = Date.now() - Date.parse(last);
-      if (Number.isFinite(sinceMs) && sinceMs < ADMIN_BANK_REFRESH_COOLDOWN_MS) {
+    // Space refreshes from the last *attempt*, not just the last success — a
+    // failing account must not be retried on every click.
+    const [account] = await this.db
+      .select({ lastSyncAttemptAt: bankAccounts.lastSyncAttemptAt })
+      .from(bankAccounts)
+      .where(eq(bankAccounts.monoAccountId, profile.monoAccountId))
+      .limit(1);
+    const analysedAt = (profile.bankAnalysis as BankAnalysis | null)?.pulledAt;
+    const anchors = [account?.lastSyncAttemptAt?.getTime(), analysedAt ? Date.parse(analysedAt) : undefined].filter(
+      (n): n is number => typeof n === "number" && Number.isFinite(n),
+    );
+    if (anchors.length) {
+      const sinceMs = Date.now() - Math.max(...anchors);
+      if (sinceMs < ADMIN_BANK_REFRESH_COOLDOWN_MS) {
         const wait = Math.ceil((ADMIN_BANK_REFRESH_COOLDOWN_MS - sinceMs) / 1000);
         throw new HttpException(
           `Bank data was refreshed a moment ago — try again in ${wait}s.`,
@@ -501,11 +480,12 @@ export class KycService {
         );
       }
     }
-    const { analysis, preserved } = await this.pullAndStoreBankAnalysis(
+    const { analysis, preserved } = await this.monoSync.sync({
       userId,
-      profile.monoAccountId,
-      profile.employer,
-    );
+      monoAccountId: profile.monoAccountId,
+      trigger: "admin",
+      staffId,
+    });
     await this.db.insert(auditLogs).values({
       actorStaffId: staffId,
       action: "customer.bank_data_refreshed",
@@ -602,6 +582,7 @@ export class KycService {
     const consent = this.activeConsent(userId);
     const record = await this.lookup.fetchBvn(consent.sessionId, otp);
     this.bvnConsents.delete(userId);
+    // Run by the customer themselves — no staff member to attribute it to.
     return { check: await this.storeIdentityCheck(userId, record) };
   }
 
@@ -615,7 +596,7 @@ export class KycService {
       throw new BadRequestException("This applicant hasn't given a NIN yet");
     }
     const record = await this.lookup.lookupNin(profile.nin);
-    await this.storeIdentityCheck(userId, record);
+    await this.storeIdentityCheck(userId, record, staffId);
     await this.db.insert(auditLogs).values({
       actorStaffId: staffId,
       action: "kyc.nin_lookup",
@@ -646,7 +627,7 @@ export class KycService {
     if (!profile.dateOfBirth) throw new BadRequestException("This applicant hasn't given a date of birth yet");
 
     const record = await this.lookup.mashup(bvn, profile.nin, profile.dateOfBirth);
-    await this.storeIdentityCheck(userId, record);
+    await this.storeIdentityCheck(userId, record, staffId);
     await this.db.insert(auditLogs).values({
       actorStaffId: staffId,
       action: "kyc.mashup_lookup",
@@ -682,7 +663,7 @@ export class KycService {
    * the applicant is who they say they are, and that answer is all a
    * reviewer needs (§13).
    */
-  private async storeIdentityCheck(userId: string, record: IdentityRecord) {
+  private async storeIdentityCheck(userId: string, record: IdentityRecord, staffId: string | null = null) {
     const profile = await this.getProfileRow(userId);
     const check = matchIdentity(
       record,
@@ -695,10 +676,16 @@ export class KycService {
       },
       { live: this.lookup.live },
     );
-    await this.db
-      .update(applicantProfiles)
-      .set({ identityLookup: check, identityLookupAt: new Date(), updatedAt: new Date() })
-      .where(eq(applicantProfiles.userId, userId));
+    // Two homes, written together: the history table keeps every check (so a
+    // NIN check no longer erases the BVN one), and the profile column keeps the
+    // latest for the screens that still read it.
+    await this.db.transaction(async (tx) => {
+      await recordIdentityVerification(tx, { userId, check, staffId });
+      await tx
+        .update(applicantProfiles)
+        .set({ identityLookup: check, identityLookupAt: new Date(), updatedAt: new Date() })
+        .where(eq(applicantProfiles.userId, userId));
+    });
     return check;
   }
 

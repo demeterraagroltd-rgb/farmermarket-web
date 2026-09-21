@@ -19,6 +19,14 @@ export interface BankAnalysis {
   source: "income_api" | "statement" | "unavailable";
 }
 
+/**
+ * Version of the rules below (the salary floor, keywords, regularity and
+ * confidence cut-offs). Stored on every financial snapshot: when a rule
+ * changes, bump this, and a decision made under the old rules stays readable
+ * as such instead of silently meaning something new.
+ */
+export const ANALYSIS_VERSION = 1;
+
 const SALARY_FLOOR_KOBO = 3_000_000; // ₦30,000 — below this we don't call it salary
 const SALARY_KEYWORDS = /\b(salary|sal|payroll|wages|remuneration|stipend)\b/i;
 

@@ -73,21 +73,39 @@ function fromCheck(check: IdentityCheck): IdentityStatus {
 }
 
 /**
- * BVN, NIN and Mashup status, from the customer's latest identity check.
+ * BVN, NIN and Mashup status, from the customer's identity checks.
  *
- * Today only the *latest* check is stored (`identity_lookup`), so a BVN check
- * followed by a NIN check shows the BVN as unverified again. That is a
- * limitation of the storage, stated here rather than papered over — the
- * per-source identity_verifications table (Phase 2) removes it, and this
- * function's output shape is what that table will feed.
+ * `history` is the latest check of each kind from identity_verifications, so
+ * one check no longer erases another: a BVN check followed by a NIN check leaves
+ * both on record. A BVN status is the more recent of the BVN and Mashup checks
+ * (Mashup cross-checks the BVN too), and the same for NIN.
+ *
+ * `identityLookup` is the single latest check kept on the profile. It is read
+ * only for a customer whose checks pre-date the history table, and then behaves
+ * exactly as it always did — it can name only one kind.
  */
 export function identityStatuses(input: {
   hasBvn: boolean;
   hasNin: boolean;
-  identityLookup: IdentityCheck | null | undefined;
+  history?: Partial<Record<IdentityCheck["source"], IdentityCheck>> | null;
+  identityLookup?: IdentityCheck | null;
 }): { bvn: IdentityStatus; nin: IdentityStatus; mashup: IdentityStatus } {
-  const check = input.identityLookup ?? null;
-  const covers = (sources: IdentityCheck["source"][]) => (check && sources.includes(check.source) ? check : null);
+  const legacy = input.identityLookup ?? null;
+  const byKind: Partial<Record<IdentityCheck["source"], IdentityCheck>> =
+    input.history && Object.keys(input.history).length > 0
+      ? input.history
+      : legacy
+        ? { [legacy.source]: legacy }
+        : {};
+
+  const latestOf = (kinds: IdentityCheck["source"][]): IdentityCheck | null => {
+    let best: IdentityCheck | null = null;
+    for (const k of kinds) {
+      const c = byKind[k];
+      if (c && (!best || Date.parse(c.checkedAt) > Date.parse(best.checkedAt))) best = c;
+    }
+    return best;
+  };
 
   const build = (provided: boolean, matching: IdentityCheck | null): IdentityStatus => {
     if (matching) return fromCheck(matching);
@@ -95,9 +113,9 @@ export function identityStatuses(input: {
   };
 
   return {
-    bvn: build(input.hasBvn, covers(["bvn", "mashup"])),
-    nin: build(input.hasNin, covers(["nin", "mashup"])),
-    mashup: build(input.hasBvn && input.hasNin, covers(["mashup"])),
+    bvn: build(input.hasBvn, latestOf(["bvn", "mashup"])),
+    nin: build(input.hasNin, latestOf(["nin", "mashup"])),
+    mashup: build(input.hasBvn && input.hasNin, latestOf(["mashup"])),
   };
 }
 

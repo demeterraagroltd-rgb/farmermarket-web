@@ -8,6 +8,13 @@ import {
   sessions,
   orders,
   applicantProfiles,
+  bankAccounts,
+  bankTransactions,
+  financialSummaries,
+  identityVerifications,
+  incomeProfiles,
+  monoRawResponses,
+  monoSyncLogs,
   kycDocuments,
   kycEvents,
   applications,
@@ -68,12 +75,30 @@ export class CustomersService {
       .leftJoin(applicantProfiles, eq(applicantProfiles.userId, users.id))
       .orderBy(desc(users.createdAt));
 
+    // The latest identity check of each kind, per customer, in one query —
+    // the same history the detail page reads, so the two never disagree.
+    const checks = await this.db
+      .selectDistinctOn([identityVerifications.userId, identityVerifications.kind], {
+        userId: identityVerifications.userId,
+        kind: identityVerifications.kind,
+        result: identityVerifications.result,
+      })
+      .from(identityVerifications)
+      .orderBy(identityVerifications.userId, identityVerifications.kind, desc(identityVerifications.checkedAt));
+    const historyByUser = new Map<string, Partial<Record<IdentityCheck["source"], IdentityCheck>>>();
+    for (const c of checks) {
+      const h = historyByUser.get(c.userId) ?? {};
+      h[c.kind] = c.result as IdentityCheck;
+      historyByUser.set(c.userId, h);
+    }
+
     const now = new Date();
     return rows.map((r) => {
       const analysis = (r.bankAnalysis ?? null) as { pulledAt?: string } | null;
       const identity = identityStatuses({
         hasBvn: !!r.hasBvn,
         hasNin: !!r.hasNin,
+        history: historyByUser.get(r.id),
         identityLookup: (r.identityLookup ?? null) as IdentityCheck | null,
       });
       const lastSyncAt = lastFinancialSync({ bankAnalysis: analysis, bankLinkedAt: r.bankLinkedAt });
@@ -210,6 +235,17 @@ export class CustomersService {
         await tx.delete(applicationDecisions).where(inArray(applicationDecisions.applicationId, appIds));
         await tx.delete(applications).where(eq(applications.userId, id));
       }
+      // Mono data goes first, children before parents: raw responses, snapshots,
+      // income and transactions all point at sync logs and bank accounts. A
+      // hard purge is an erasure, so the customer's bank and identity records
+      // go with them.
+      await tx.delete(monoRawResponses).where(eq(monoRawResponses.userId, id));
+      await tx.delete(bankTransactions).where(eq(bankTransactions.userId, id));
+      await tx.delete(financialSummaries).where(eq(financialSummaries.userId, id));
+      await tx.delete(incomeProfiles).where(eq(incomeProfiles.userId, id));
+      await tx.delete(identityVerifications).where(eq(identityVerifications.userId, id));
+      await tx.delete(monoSyncLogs).where(eq(monoSyncLogs.userId, id));
+      await tx.delete(bankAccounts).where(eq(bankAccounts.userId, id));
       await tx.delete(kycEvents).where(eq(kycEvents.userId, id));
       await tx.delete(kycDocuments).where(eq(kycDocuments.userId, id));
       await tx.delete(applicantProfiles).where(eq(applicantProfiles.userId, id));

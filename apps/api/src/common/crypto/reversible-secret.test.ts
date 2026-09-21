@@ -48,3 +48,43 @@ describe("reversible-secret", () => {
     expect(() => encryptSecret("x")).toThrow(/32 bytes/);
   });
 });
+
+describe("independent keys", () => {
+  const RAW = "MONO_RAW_ENCRYPTION_KEY";
+  const rawKey = Buffer.alloc(32, 7).toString("base64");
+  const saved = { bvn: process.env.BVN_ENCRYPTION_KEY, raw: process.env[RAW] };
+  afterEach(() => {
+    if (saved.bvn === undefined) delete process.env.BVN_ENCRYPTION_KEY;
+    else process.env.BVN_ENCRYPTION_KEY = saved.bvn;
+    if (saved.raw === undefined) delete process.env[RAW];
+    else process.env[RAW] = saved.raw;
+  });
+
+  it("uses each variable for its own purpose", () => {
+    process.env.BVN_ENCRYPTION_KEY = KEY_A;
+    process.env[RAW] = rawKey;
+    const enc = encryptSecret("payload", RAW);
+    expect(decryptSecretOrNull(enc, RAW)).toBe("payload");
+  });
+
+  it("does not let the BVN key open something sealed with the raw-response key", () => {
+    process.env.BVN_ENCRYPTION_KEY = KEY_A;
+    process.env[RAW] = rawKey;
+    const enc = encryptSecret("payload", RAW);
+    expect(decryptSecretOrNull(enc)).toBeNull(); // default = the BVN key
+  });
+
+  it("reports each key independently", () => {
+    process.env.BVN_ENCRYPTION_KEY = KEY_A;
+    delete process.env[RAW];
+    expect(hasEncryptionKey()).toBe(true);
+    expect(hasEncryptionKey(RAW)).toBe(false);
+  });
+
+  it("names the right variable when one is missing or malformed", () => {
+    delete process.env[RAW];
+    expect(() => encryptSecret("x", RAW)).toThrow(/MONO_RAW_ENCRYPTION_KEY/);
+    process.env[RAW] = Buffer.alloc(8).toString("base64");
+    expect(() => encryptSecret("x", RAW)).toThrow(/MONO_RAW_ENCRYPTION_KEY must decode/);
+  });
+});

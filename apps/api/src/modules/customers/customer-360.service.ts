@@ -5,6 +5,8 @@ import {
   applicationDecisions,
   applications,
   auditLogs,
+  bankAccounts,
+  monoSyncLogs,
   repaymentSchedules,
   repayments,
   staff,
@@ -17,6 +19,7 @@ import { WalletService } from "../wallet/wallet.service";
 import { OrdersService } from "../orders/orders.service";
 import type { BankAnalysis } from "../kyc/bank-analysis";
 import type { IdentityCheck } from "../kyc/identity-match";
+import { latestIdentityChecks } from "../mono-data/identity-verifications";
 import {
   bankConnectionState,
   compareIncome,
@@ -58,7 +61,8 @@ export class Customer360Service {
     const [user] = await this.db.select().from(users).where(eq(users.id, customerId)).limit(1);
     if (!user) throw new NotFoundException("Customer not found");
 
-    const [kycView, creditPosition, orderList, applicationRows, paymentRows, auditRows] = await Promise.all([
+    const [kycView, creditPosition, orderList, applicationRows, paymentRows, auditRows, identityHistory, accountRows, syncRows] =
+      await Promise.all([
       // A customer created before KYC existed has a users row but no profile —
       // that is a legitimate (empty) state for this page, not a 404.
       this.kyc.getForStaff(staffId, customerId, { audit: false }).catch((e: unknown) => {
@@ -96,6 +100,25 @@ export class Customer360Service {
         .where(and(eq(auditLogs.targetType, "user"), eq(auditLogs.targetId, customerId)))
         .orderBy(desc(auditLogs.createdAt))
         .limit(200),
+      latestIdentityChecks(this.db, customerId),
+      this.db.select().from(bankAccounts).where(eq(bankAccounts.userId, customerId)).orderBy(bankAccounts.linkedAt),
+      this.db
+        .select({
+          id: monoSyncLogs.id,
+          trigger: monoSyncLogs.trigger,
+          status: monoSyncLogs.status,
+          startedAt: monoSyncLogs.startedAt,
+          durationMs: monoSyncLogs.durationMs,
+          transactionsFetched: monoSyncLogs.transactionsFetched,
+          transactionsInserted: monoSyncLogs.transactionsInserted,
+          errorMessage: monoSyncLogs.errorMessage,
+          triggeredBy: staff.fullName,
+        })
+        .from(monoSyncLogs)
+        .leftJoin(staff, eq(monoSyncLogs.triggeredByStaffId, staff.id))
+        .where(eq(monoSyncLogs.userId, customerId))
+        .orderBy(desc(monoSyncLogs.startedAt))
+        .limit(10),
     ]);
 
     // Decisions for the applications above, newest first, so the latest wins
@@ -129,21 +152,45 @@ export class Customer360Service {
     const identity = identityStatuses({
       hasBvn: !!profile?.hasBvn,
       hasNin: !!profile?.nin,
+      history: identityHistory,
       identityLookup,
     });
 
     // ── bank / financial ──────────────────────────────────────────────────
     const monoAccountId: string | null = profile?.monoAccountId ?? null;
-    const bankState = bankConnectionState({
+    const legacyState = bankConnectionState({
       monoAccountId,
       bankLinkRequestedAt: profile?.bankLinkRequestedAt,
     });
+    // Once accounts are recorded in bank_accounts they are the truth — including
+    // "the customer disconnected", which the old profile column can't express.
+    const bankState =
+      accountRows.length === 0
+        ? legacyState
+        : accountRows.some((a) => a.status === "active")
+          ? ("connected" as const)
+          : profile?.bankLinkRequestedAt
+            ? ("requested" as const)
+            : ("not_connected" as const);
     const syncAt = lastFinancialSync({ bankAnalysis: analysis, bankLinkedAt: profile?.bankLinkedAt });
     const freshness = freshnessOf(syncAt);
     const declaredKobo = toNumber(profile?.netMonthlySalaryKobo);
     const estimatedKobo = analysis?.estimatedMonthlyIncomeKobo ?? null;
 
-    const accounts = monoAccountId
+    const accounts = accountRows.length
+      ? accountRows.map((a) => ({
+          monoAccountId: a.monoAccountId,
+          bankName: a.institution,
+          accountName: a.accountName,
+          accountMasked: a.accountNumberLast4 ? `•••• ${a.accountNumberLast4}` : null,
+          currency: a.currency,
+          balanceKobo: a.balanceKobo == null ? null : Number(a.balanceKobo),
+          status: a.status === "active" ? ("connected" as const) : a.status,
+          linkedAt: a.linkedAt,
+          lastSyncAt: a.lastSyncedAt,
+          freshness: freshnessOf(a.lastSyncedAt),
+        }))
+      : monoAccountId
       ? [
           {
             monoAccountId,
@@ -272,6 +319,19 @@ export class Customer360Service {
         state: bankState,
         requestedAt: profile?.bankLinkRequestedAt ?? null,
         accounts,
+        // The last ten attempts to talk to Mono, failures included — the answer
+        // to "why is this data stale?".
+        syncHistory: syncRows.map((s) => ({
+          id: s.id,
+          trigger: s.trigger,
+          status: s.status,
+          startedAt: s.startedAt,
+          durationMs: s.durationMs,
+          transactionsFetched: s.transactionsFetched,
+          transactionsInserted: s.transactionsInserted,
+          error: s.errorMessage,
+          triggeredBy: s.triggeredBy,
+        })),
       },
 
       financial: {

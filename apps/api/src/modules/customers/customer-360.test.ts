@@ -100,6 +100,59 @@ describe("identityStatuses", () => {
   });
 });
 
+describe("identityStatuses — from history", () => {
+  const at = (h: number) => new Date(Date.UTC(2026, 8, 21, h)).toISOString();
+
+  it("keeps a BVN check when a NIN check is run afterwards (the old single-slot limitation)", () => {
+    const s = identityStatuses({
+      hasBvn: true,
+      hasNin: true,
+      history: { bvn: check({ source: "bvn", checkedAt: at(9) }), nin: check({ source: "nin", checkedAt: at(10) }) },
+    });
+    expect(s.bvn.state).toBe("verified");
+    expect(s.nin.state).toBe("verified");
+    expect(s.mashup.state).toBe("unverified");
+  });
+
+  it("takes the more recent of the BVN and Mashup checks for the BVN", () => {
+    const newerBvn = identityStatuses({
+      hasBvn: true,
+      hasNin: true,
+      history: {
+        mashup: check({ source: "mashup", checkedAt: at(8) }),
+        bvn: check({ source: "bvn", checkedAt: at(11), verdict: "mismatch" }),
+      },
+    });
+    expect(newerBvn.bvn.state).toBe("mismatch"); // the later, failing check wins
+    expect(newerBvn.nin.state).toBe("verified"); // NIN is still covered by the Mashup
+
+    const newerMashup = identityStatuses({
+      hasBvn: true,
+      hasNin: true,
+      history: {
+        bvn: check({ source: "bvn", checkedAt: at(8), verdict: "mismatch" }),
+        mashup: check({ source: "mashup", checkedAt: at(11) }),
+      },
+    });
+    expect(newerMashup.bvn.state).toBe("verified");
+  });
+
+  it("prefers the history over the legacy profile column when both exist", () => {
+    const s = identityStatuses({
+      hasBvn: true,
+      hasNin: false,
+      history: { bvn: check({ source: "bvn", verdict: "partial" }) },
+      identityLookup: check({ source: "bvn", verdict: "match" }),
+    });
+    expect(s.bvn.state).toBe("partial");
+  });
+
+  it("falls back to the legacy column when there is no history", () => {
+    const s = identityStatuses({ hasBvn: true, hasNin: false, history: {}, identityLookup: check({ source: "bvn" }) });
+    expect(s.bvn.state).toBe("verified");
+  });
+});
+
 describe("bankConnectionState", () => {
   it("is connected once there is a Mono account", () => {
     expect(bankConnectionState({ monoAccountId: "acc_1", bankLinkRequestedAt: null })).toBe("connected");

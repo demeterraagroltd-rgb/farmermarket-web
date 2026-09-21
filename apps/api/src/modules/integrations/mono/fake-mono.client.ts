@@ -4,6 +4,7 @@ import type {
   MonoClient,
   MonoIncome,
   MonoTransaction,
+  RawCapture,
 } from "./mono.types";
 
 /**
@@ -21,8 +22,8 @@ export class FakeMonoClient implements MonoClient {
     return { accountId: "acct_fake" };
   }
 
-  async getAccountDetails(): Promise<MonoAccountDetails> {
-    return {
+  async getAccountDetails(_accountId?: string, capture?: RawCapture): Promise<MonoAccountDetails> {
+    const details: MonoAccountDetails = {
       accountId: "acct_fake",
       name: "ADA OKONKWO",
       accountNumberLast4: "4321",
@@ -31,14 +32,18 @@ export class FakeMonoClient implements MonoClient {
       currency: "NGN",
       institution: "GTBank",
     };
+    capture?.("account_details", { status: "successful", data: { account: details } });
+    return details;
   }
 
-  async getTransactions(_accountId: string, months: number): Promise<MonoTransaction[]> {
+  async getTransactions(_accountId: string, months: number, capture?: RawCapture): Promise<MonoTransaction[]> {
     const out: MonoTransaction[] = [];
     const now = new Date();
     for (let m = 0; m < Math.min(months, 6); m++) {
       const d = new Date(now.getFullYear(), now.getMonth() - m, 28);
       out.push({
+        id: `fake_credit_${d.toISOString().slice(0, 10)}`,
+        category: "transfer",
         amountKobo: 25_000_000, // ₦250,000 salary
         type: "credit",
         narration: "SALARY - ACME CORP LTD",
@@ -46,6 +51,8 @@ export class FakeMonoClient implements MonoClient {
         balanceKobo: null,
       });
       out.push({
+        id: `fake_debit_${d.toISOString().slice(0, 10)}`,
+        category: "pos",
         amountKobo: 1_500_000 + m * 100_000,
         type: "debit",
         narration: "POS PURCHASE",
@@ -53,15 +60,18 @@ export class FakeMonoClient implements MonoClient {
         balanceKobo: null,
       });
     }
+    capture?.("transactions", { status: "successful", data: out });
     return out;
   }
 
-  async getIncome(): Promise<MonoIncome | null> {
-    return {
+  async getIncome(_accountId?: string, capture?: RawCapture): Promise<MonoIncome | null> {
+    const income: MonoIncome = {
       monthlyIncomeKobo: 25_000_000,
       averageIncomeKobo: 25_000_000,
       confidence: "high",
       lastIncomeDescription: "SALARY - ACME CORP LTD",
     };
+    capture?.("income", { status: "successful", data: income });
+    return income;
   }
 }

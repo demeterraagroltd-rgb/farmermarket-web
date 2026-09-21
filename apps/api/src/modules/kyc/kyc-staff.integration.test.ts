@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { applicantProfiles, auditLogs, staff, users, type Db } from "@farmermarket/db";
 import { createTestDb, type TestDb } from "../../test/test-db";
 import { KycService } from "./kyc.service";
+import { MonoSyncService } from "../mono-data/mono-sync.service";
 import { staffProfileEditSchema } from "./dto/kyc.dto";
 import { FakeMonoClient } from "../integrations/mono/fake-mono.client";
 import type { MonoClient } from "../integrations/mono/mono.types";
@@ -33,7 +34,7 @@ describe("KYC staff actions (real Postgres)", () => {
     await db.insert(applicantProfiles).values({ userId: u.id, fullName: "Seed", phone, ...profile });
     return u.id;
   };
-  const service = (mono: MonoClient) => new KycService(db, any, any, any, mono, any);
+  const service = (mono: MonoClient) => new KycService(db, any, any, any, mono, any, new MonoSyncService(db, mono));
 
   beforeAll(async () => {
     t = await createTestDb();

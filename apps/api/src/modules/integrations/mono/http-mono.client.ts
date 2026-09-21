@@ -4,6 +4,7 @@ import type {
   MonoClient,
   MonoIncome,
   MonoTransaction,
+  RawCapture,
 } from "./mono.types";
 
 const DEFAULT_BASE_URL = "https://api.withmono.com";
@@ -34,7 +35,7 @@ export class HttpMonoClient implements MonoClient {
     this.baseUrl = (baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
   }
 
-  private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async call<T>(path: string, init: RequestInit = {}, onRaw?: (raw: unknown) => void): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
@@ -56,6 +57,7 @@ export class HttpMonoClient implements MonoClient {
       this.log.warn(`[mono] ${init.method ?? "GET"} ${path} → ${res.status}: ${msg}`);
       throw new BadRequestException(`Mono: ${msg}`);
     }
+    onRaw?.(body);
     return unwrap<T>(body);
   }
 
@@ -68,7 +70,7 @@ export class HttpMonoClient implements MonoClient {
     return { accountId: data.id };
   }
 
-  async getAccountDetails(accountId: string): Promise<MonoAccountDetails> {
+  async getAccountDetails(accountId: string, capture?: RawCapture): Promise<MonoAccountDetails> {
     // GET /v2/accounts/:id → { account: {...}, meta: {...} }
     const data = await this.call<{
       account?: {
@@ -79,7 +81,7 @@ export class HttpMonoClient implements MonoClient {
         bvn?: string;
         institution?: { name?: string };
       };
-    }>(`/v2/accounts/${accountId}`);
+    }>(`/v2/accounts/${accountId}`, {}, (raw) => capture?.("account_details", raw));
     const a = data.account ?? {};
     return {
       accountId,
@@ -93,7 +95,7 @@ export class HttpMonoClient implements MonoClient {
     };
   }
 
-  async getTransactions(accountId: string, months: number): Promise<MonoTransaction[]> {
+  async getTransactions(accountId: string, months: number, capture?: RawCapture): Promise<MonoTransaction[]> {
     const start = new Date();
     start.setMonth(start.getMonth() - months);
     const qs = new URLSearchParams({
@@ -101,10 +103,21 @@ export class HttpMonoClient implements MonoClient {
       start: start.toISOString().slice(0, 10),
     });
     const data = await this.call<
-      Array<{ amount?: number; type?: string; narration?: string; date?: string; balance?: number }>
-    >(`/v2/accounts/${accountId}/transactions?${qs.toString()}`);
+      Array<{
+        id?: string;
+        _id?: string;
+        amount?: number;
+        type?: string;
+        narration?: string;
+        date?: string;
+        balance?: number;
+        category?: string;
+      }>
+    >(`/v2/accounts/${accountId}/transactions?${qs.toString()}`, {}, (raw) => capture?.("transactions", raw));
     const rows = Array.isArray(data) ? data : [];
     return rows.map((t) => ({
+      id: t.id ?? t._id ?? null,
+      category: t.category ?? null,
       amountKobo: typeof t.amount === "number" ? Math.round(t.amount) : 0,
       type: t.type === "credit" ? "credit" : "debit",
       narration: t.narration ?? "",
@@ -113,14 +126,14 @@ export class HttpMonoClient implements MonoClient {
     }));
   }
 
-  async getIncome(accountId: string): Promise<MonoIncome | null> {
+  async getIncome(accountId: string, capture?: RawCapture): Promise<MonoIncome | null> {
     try {
       const data = await this.call<{
         monthly_income?: number | string;
         average_income?: number | string;
         income_confidence?: string;
         last_income_description?: string;
-      }>(`/v2/accounts/${accountId}/income`);
+      }>(`/v2/accounts/${accountId}/income`, {}, (raw) => capture?.("income", raw));
       if (!data || typeof data !== "object") return null;
       const conf = (data.income_confidence ?? "").toLowerCase();
       return {
