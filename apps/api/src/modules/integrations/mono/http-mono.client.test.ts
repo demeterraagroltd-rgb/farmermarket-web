@@ -41,9 +41,24 @@ describe("HttpMonoClient", () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const url = new URL((fetchMock.mock.calls[0][0] as string));
-      expect(url.searchParams.get("start")).toBe("2026-03-22");
-      expect(url.searchParams.get("end")).toBe("2026-09-22");
+      // dd-mm-yyyy — Mono's own example is "05-01-2020"; ISO (2026-03-22) is
+      // rejected as "Invalid date format".
+      expect(url.searchParams.get("start")).toBe("22-03-2026");
+      expect(url.searchParams.get("end")).toBe("22-09-2026");
       expect(url.searchParams.get("paginate")).toBe("false");
+    });
+
+    it("pads single-digit days and months to two digits", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-05T00:00:00Z"));
+      const fetchMock = mockFetchSpy({ status: "success", data: [] });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await new HttpMonoClient("sk_test").getTransactions("acc_1", 1);
+
+      const url = new URL(fetchMock.mock.calls[0][0] as string);
+      expect(url.searchParams.get("start")).toBe("05-12-2025");
+      expect(url.searchParams.get("end")).toBe("05-01-2026");
     });
 
     it("maps Mono's transaction shape, including a missing id and category", async () => {

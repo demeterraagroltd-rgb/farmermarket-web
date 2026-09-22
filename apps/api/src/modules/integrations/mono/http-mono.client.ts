@@ -18,6 +18,13 @@ function unwrap<T>(body: unknown): T {
   return body as T;
 }
 
+/** Mono's transactions endpoint wants dd-mm-yyyy (their example: 05-01-2020), not ISO. */
+function toMonoDate(d: Date): string {
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getUTCFullYear()}`;
+}
+
 function toKobo(naira: unknown): number | null {
   const n = typeof naira === "string" ? Number(naira) : (naira as number);
   return Number.isFinite(n) ? Math.round(n * 100) : null;
@@ -100,11 +107,12 @@ export class HttpMonoClient implements MonoClient {
     const start = new Date(end);
     start.setMonth(start.getMonth() - months);
     // Mono rejects a `start` without a matching `end` as "Incomplete period
-    // range" — the period is either both dates or neither, never one.
+    // range" — the period is either both dates or neither, never one. And it
+    // wants dd-mm-yyyy, not ISO — "Invalid date format" if given 2026-03-22.
     const qs = new URLSearchParams({
       paginate: "false",
-      start: start.toISOString().slice(0, 10),
-      end: end.toISOString().slice(0, 10),
+      start: toMonoDate(start),
+      end: toMonoDate(end),
     });
     const data = await this.call<
       Array<{
