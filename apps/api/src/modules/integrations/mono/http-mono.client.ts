@@ -96,11 +96,15 @@ export class HttpMonoClient implements MonoClient {
   }
 
   async getTransactions(accountId: string, months: number, capture?: RawCapture): Promise<MonoTransaction[]> {
-    const start = new Date();
+    const end = new Date();
+    const start = new Date(end);
     start.setMonth(start.getMonth() - months);
+    // Mono rejects a `start` without a matching `end` as "Incomplete period
+    // range" — the period is either both dates or neither, never one.
     const qs = new URLSearchParams({
       paginate: "false",
       start: start.toISOString().slice(0, 10),
+      end: end.toISOString().slice(0, 10),
     });
     const data = await this.call<
       Array<{
