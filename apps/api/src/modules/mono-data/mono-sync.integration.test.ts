@@ -119,6 +119,10 @@ describe("Mono persistence (real Postgres)", () => {
       expect(credit).toMatchObject({ amountKobo: 25_000_000n, narration: "SALARY - ACME CORP LTD" });
       // the original transaction is kept verbatim for the admin's "raw data" view
       expect((credit.raw as { narration: string }).narration).toBe("SALARY - ACME CORP LTD");
+      // a sync also stamps our own category (Phase 5) — never someone else's classification
+      expect(credit.category).toBe("salary");
+      const debit = txs.find((x) => x.direction === "debit")!;
+      expect(debit.category).toBe("pos_purchase");
 
       const [inc] = await db.select().from(incomeProfiles).where(eq(incomeProfiles.userId, userId));
       expect(inc).toMatchObject({ monthlyIncomeKobo: 25_000_000n, confidence: "high", source: "mono_income" });

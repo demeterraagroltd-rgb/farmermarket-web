@@ -17,6 +17,8 @@ import { DataTable, Row, Section, FreshnessBadge, NotStoredYet, Td, Updated, typ
 import { useBankRefresh } from "./useBankRefresh";
 import { IncomeSources } from "./IncomeSources";
 import { RawResponses } from "./RawResponses";
+import { SpendingAnalysis } from "./SpendingAnalysis";
+import { EmployerVerification } from "./EmployerVerification";
 
 // ── Bank accounts ─────────────────────────────────────────────────────────
 
@@ -199,11 +201,15 @@ export function FinancialTab({ data, reload }: TabProps) {
 
   if (!f.analysis || f.source === "unavailable") {
     return (
-      <NotStoredYet title={connected ? "No usable income data yet" : "No bank data to analyse"}>
-        {connected
-          ? "The bank is linked but Mono hasn't returned income or transaction data yet. Refresh from the Bank Accounts tab, or wait for Mono to finish processing the account."
-          : "Income analysis comes from the customer's linked bank account. Request one from the Bank Accounts tab."}
-      </NotStoredYet>
+      <div className="flex flex-col gap-4">
+        <NotStoredYet title={connected ? "No usable income data yet" : "No bank data to analyse"}>
+          {connected
+            ? "The bank is linked but Mono hasn't returned income or transaction data yet. Refresh from the Bank Accounts tab, or wait for Mono to finish processing the account."
+            : "Income analysis comes from the customer's linked bank account. Request one from the Bank Accounts tab."}
+        </NotStoredYet>
+        {/* Doesn't need bank data — the name-quality half works from the declared employer alone. */}
+        <EmployerVerification customerId={data.customer.id} />
+      </div>
     );
   }
 
@@ -267,6 +273,10 @@ export function FinancialTab({ data, reload }: TabProps) {
       >
         <IncomeSources customerId={data.customer.id} />
       </Section>
+
+      <EmployerVerification customerId={data.customer.id} />
+
+      <SpendingAnalysis customerId={data.customer.id} />
 
       <p className="text-xs text-text-muted">
         Figures are analytical estimates from the bank data Mono returned, not verified statements of earnings.

@@ -1,19 +1,27 @@
 import { Inject, Injectable, NotFoundException, ConflictException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, gte, ilike, lt, lte, sql, type SQL } from "drizzle-orm";
-import { auditLogs, bankAccounts, bankTransactions, monoRawResponses, monoSyncLogs, type Db } from "@farmermarket/db";
+import { and, asc, desc, eq, gt, gte, ilike, lt, lte, ne, sql, type SQL } from "drizzle-orm";
+import { applicantProfiles, auditLogs, bankAccounts, bankTransactions, monoRawResponses, monoSyncLogs, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import type { StaffRole } from "../../common/decorators/roles.decorator";
-import { analyseIncomeSources } from "../mono-data/income-sources";
+import { analyseIncomeSources, type IncomeSourcesResult } from "../mono-data/income-sources";
+import { analyseRecurringExpenses } from "../mono-data/recurring-expenses";
 import { openRaw, rawStorageEnabled } from "../mono-data/raw-response";
 import { buildStatement } from "../mono-data/statement-periods";
+import { categoryBreakdown, detectUnusualTransactions, signalFor, type CategorizedTx } from "../mono-data/spending-signals";
+import { categorizeTransaction, type TransactionCategory } from "../mono-data/transaction-categorization";
+import { employerNameLooksReal, employerPaymentMatch } from "../mono-data/employer-signals";
 import { nairaFromKobo, toCsv } from "./csv";
 import {
   EXPORT_ROW_LIMIT,
   type IncomeSourcesQueryInput,
+  type SpendingAnalysisQueryInput,
   type StatementQueryInput,
   type TransactionFilterInput,
   type TransactionListInput,
 } from "./dto/financial.dto";
+
+/** Other applicants declaring the same employer text at or above this count get a "worth a look" flag. */
+const EMPLOYER_SHARED_THRESHOLD = 5;
 
 const DAY = 86_400_000;
 
@@ -169,7 +177,7 @@ export class CustomerFinancialService {
         occurredAt: r.occurredAt.toISOString(),
         balanceAfterKobo: numOrNull(r.balanceAfterKobo),
         channel: r.providerCategory,
-        category: r.category,
+        category: r.category ?? categorizeTransaction({ narration: r.narration, direction: r.direction, channel: r.providerCategory }),
         retrievedAt: r.retrievedAt.toISOString(),
       })),
       page: q.page,
@@ -220,7 +228,7 @@ export class CustomerFinancialService {
       occurredAt: row.occurredAt.toISOString(),
       balanceAfterKobo: numOrNull(row.balanceAfterKobo),
       channel: row.providerCategory,
-      category: row.category,
+      category: row.category ?? categorizeTransaction({ narration: row.narration, direction: row.direction, channel: row.providerCategory }),
       retrievedAt: row.retrievedAt.toISOString(),
       firstSeenAt: row.firstSeenAt.toISOString(),
       raw: includeRaw ? (row.raw ?? null) : undefined,
@@ -273,7 +281,7 @@ export class CustomerFinancialService {
         nairaFromKobo(r.amountKobo),
         nairaFromKobo(r.balanceAfterKobo),
         r.providerCategory ?? "",
-        r.category ?? "",
+        r.category ?? categorizeTransaction({ narration: r.narration, direction: r.direction, channel: r.providerCategory }),
         r.externalId,
       ]),
     );
@@ -341,8 +349,12 @@ export class CustomerFinancialService {
     };
   }
 
-  async incomeSources(customerId: string, q: IncomeSourcesQueryInput, now: Date = new Date()) {
-    await this.assertOwnAccount(customerId, q.accountId);
+  /** Shared by the income-sources route and the employer check — both group the same window of credits. */
+  private async incomeSourcesFor(
+    customerId: string,
+    q: { accountId?: string; months: number },
+    now: Date,
+  ): Promise<{ creditsAnalysed: number; result: IncomeSourcesResult }> {
     const since = new Date(now);
     since.setUTCMonth(since.getUTCMonth() - q.months);
 
@@ -365,9 +377,116 @@ export class CustomerFinancialService {
       .limit(20_000);
 
     return {
-      months: q.months,
       creditsAnalysed: rows.length,
-      ...analyseIncomeSources(rows.map((r) => ({ narration: r.narration, amountKobo: num(r.amountKobo), occurredAt: r.occurredAt }))),
+      result: analyseIncomeSources(rows.map((r) => ({ narration: r.narration, amountKobo: num(r.amountKobo), occurredAt: r.occurredAt }))),
+    };
+  }
+
+  async incomeSources(customerId: string, q: IncomeSourcesQueryInput, now: Date = new Date()) {
+    await this.assertOwnAccount(customerId, q.accountId);
+    const { creditsAnalysed, result } = await this.incomeSourcesFor(customerId, q, now);
+    return { months: q.months, creditsAnalysed, ...result };
+  }
+
+  // ── Spending analysis (Phase 5) ─────────────────────────────────────────
+  // Every figure below is derived from bank_transactions in one pass over the
+  // requested window — categorisation, recurring payees, loan/gambling
+  // exposure, unusual amounts. Falls back to categorizing on the fly for any
+  // row a sync hasn't re-touched yet (see transaction-categorization.ts).
+
+  async spendingAnalysis(customerId: string, q: SpendingAnalysisQueryInput, now: Date = new Date()) {
+    await this.assertOwnAccount(customerId, q.accountId);
+    const since = new Date(now);
+    since.setUTCMonth(since.getUTCMonth() - q.months);
+
+    const rows = await this.db
+      .select({
+        id: bankTransactions.id,
+        narration: bankTransactions.narration,
+        direction: bankTransactions.direction,
+        amountKobo: bankTransactions.amountKobo,
+        occurredAt: bankTransactions.occurredAt,
+        providerCategory: bankTransactions.providerCategory,
+        category: bankTransactions.category,
+      })
+      .from(bankTransactions)
+      .where(
+        and(
+          eq(bankTransactions.userId, customerId),
+          gt(bankTransactions.occurredAt, since),
+          ...(q.accountId ? [eq(bankTransactions.bankAccountId, q.accountId)] : []),
+        ),
+      )
+      .orderBy(desc(bankTransactions.occurredAt))
+      .limit(20_000);
+
+    const txs: CategorizedTx[] = rows.map((r) => ({
+      id: r.id,
+      narration: r.narration,
+      direction: r.direction,
+      amountKobo: num(r.amountKobo),
+      occurredAt: r.occurredAt,
+      category: (r.category as TransactionCategory | null) ?? categorizeTransaction({ narration: r.narration, direction: r.direction, channel: r.providerCategory }),
+    }));
+
+    const cashFlow = buildStatement(
+      txs.map((t) => ({ occurredAt: t.occurredAt, direction: t.direction, amountKobo: t.amountKobo, balanceAfterKobo: null })),
+      { from: since, to: now },
+    ).periods.map((p) => ({ month: p.month, creditsKobo: p.creditsKobo, debitsKobo: p.debitsKobo, netKobo: p.netKobo }));
+
+    return {
+      months: q.months,
+      transactionsAnalysed: txs.length,
+      categoryBreakdown: categoryBreakdown(txs),
+      cashFlow,
+      loanRepayment: signalFor(txs, "loan_repayment", q.months),
+      loanReceived: signalFor(txs, "loan_disbursement", q.months),
+      gambling: signalFor(txs, "gambling", q.months),
+      recurringExpenses: analyseRecurringExpenses(
+        txs.filter((t) => t.direction === "debit").map((t) => ({ narration: t.narration, amountKobo: t.amountKobo, occurredAt: t.occurredAt, category: t.category })),
+      ),
+      unusualTransactions: detectUnusualTransactions(txs),
+    };
+  }
+
+  // ── Employer verification (heuristics only — no registry lookup) ───────
+
+  /**
+   * Two free, no-integration signals: does the declared employer's name look
+   * like a placeholder, and does the customer's own bank data actually show
+   * that employer paying them. Neither confirms a business is registered —
+   * that needs a paid registry (CAC) lookup, deliberately out of scope.
+   */
+  async employerCheck(customerId: string, now: Date = new Date()) {
+    const [profile] = await this.db
+      .select({ employer: applicantProfiles.employer, employmentType: applicantProfiles.employmentType })
+      .from(applicantProfiles)
+      .where(eq(applicantProfiles.userId, customerId))
+      .limit(1);
+    const employer = profile?.employer?.trim() || null;
+    const employmentType = profile?.employmentType ?? null;
+
+    if (!employer) {
+      return { employer: null, employmentType, nameCheck: null, payment: null, sharedWith: null };
+    }
+
+    const nameCheck = employerNameLooksReal(employer);
+    const { result: income } = await this.incomeSourcesFor(customerId, { months: 6 }, now);
+    const payment = employerPaymentMatch(employer, income);
+
+    // Case/whitespace-insensitive: "Acme Foods Ltd" and "acme foods ltd " are the same declared employer.
+    const [{ n }] = await this.db
+      .select({ n: sql<string>`count(*)` })
+      .from(applicantProfiles)
+      .where(and(sql`lower(trim(${applicantProfiles.employer})) = lower(trim(${employer}))`, ne(applicantProfiles.userId, customerId)));
+    const sharedCount = Number(n);
+
+    return {
+      employer,
+      employmentType,
+      nameCheck,
+      payment: { matched: payment.matched, source: payment.source },
+      sharedWith: { count: sharedCount, flagged: sharedCount >= EMPLOYER_SHARED_THRESHOLD },
     };
   }
 

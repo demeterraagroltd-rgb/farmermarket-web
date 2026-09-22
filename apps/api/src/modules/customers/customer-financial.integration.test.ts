@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import {
+  applicantProfiles,
   auditLogs,
   bankAccounts,
   bankTransactions,
@@ -371,6 +372,145 @@ describe("Customer financial data (real Postgres)", () => {
     });
   });
 
+  // ── Spending analysis (Phase 5) ──────────────────────────────────────────
+
+  describe("spending analysis", () => {
+    let spendId: string;
+    let spendAcct: string;
+    // After every seeded date below (including the 25th-of-the-month salary
+    // credits) — a "now" earlier than the data it's meant to explain would
+    // make the exclusion below a bug in the test, not the code.
+    const NOW = new Date("2026-09-26T12:00:00Z");
+
+    beforeAll(async () => {
+      spendId = await makeCustomer("Spend Tester");
+      spendAcct = await makeAccount(spendId, "mono_spend_1");
+
+      for (const m of ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"]) {
+        await tx(spendId, spendAcct, `sal_${m}`, { narration: "ACME CORP SALARY", amountKobo: 30_000_000n, occurredAt: new Date(`${m}-25T09:00:00Z`) });
+      }
+      for (const m of ["2026-07", "2026-08", "2026-09"]) {
+        await tx(spendId, spendAcct, `dstv_${m}`, { direction: "debit", narration: "DSTV SUBSCRIPTION", amountKobo: 620_000n, occurredAt: new Date(`${m}-05T09:00:00Z`) });
+      }
+      await tx(spendId, spendAcct, "bet1", { direction: "debit", narration: "BET9JA DEPOSIT", amountKobo: 10_000n, occurredAt: new Date("2026-04-10T09:00:00Z") });
+      await tx(spendId, spendAcct, "bet2", { direction: "debit", narration: "BET9JA DEPOSIT", amountKobo: 90_000n, occurredAt: new Date("2026-09-10T09:00:00Z") });
+      await tx(spendId, spendAcct, "loan1", { direction: "debit", narration: "FAIRMONEY LOAN REPAYMENT", amountKobo: 300_000n, occurredAt: new Date("2026-08-15T09:00:00Z") });
+      for (let i = 0; i < 6; i++) {
+        await tx(spendId, spendAcct, `pos${i}`, { direction: "debit", narration: "POS SHOPRITE", amountKobo: 500_000n, occurredAt: new Date(`2026-0${i + 4}-12T09:00:00Z`) });
+      }
+      await tx(spendId, spendAcct, "big1", { direction: "debit", narration: "POS EXPENSIVE ITEM", amountKobo: 5_000_000n, occurredAt: new Date("2026-09-18T09:00:00Z") });
+    });
+
+    it("categorises stored transactions on the fly (no sync has ever set bank_transactions.category here) and totals per category", async () => {
+      const r = await svc.spendingAnalysis(spendId, { months: 6 }, NOW);
+      const salary = r.categoryBreakdown.find((c) => c.category === "salary")!;
+      expect(salary).toMatchObject({ count: 6, creditsKobo: 180_000_000, debitsKobo: 0 });
+      const bills = r.categoryBreakdown.find((c) => c.category === "bills_utilities")!;
+      expect(bills).toMatchObject({ count: 3, debitsKobo: 1_860_000 });
+    });
+
+    it("builds a monthly cash flow across the whole window, including any quiet months", async () => {
+      const r = await svc.spendingAnalysis(spendId, { months: 6 }, NOW);
+      expect(r.cashFlow).toHaveLength(7); // March (no activity) through September
+      expect(r.cashFlow.map((c) => c.month)[0]).toBe("2026-03");
+      const sept = r.cashFlow.find((c) => c.month === "2026-09")!;
+      expect(sept.creditsKobo).toBe(30_000_000);
+    });
+
+    it("reports the gambling signal and calls its trend increasing", async () => {
+      const r = await svc.spendingAnalysis(spendId, { months: 6 }, NOW);
+      expect(r.gambling).toMatchObject({ present: true, count: 2, totalKobo: 100_000, monthsActive: 2, trend: "increasing" });
+    });
+
+    it("keeps loan repayment and loan received as separate signals", async () => {
+      const r = await svc.spendingAnalysis(spendId, { months: 6 }, NOW);
+      expect(r.loanRepayment).toMatchObject({ present: true, count: 1, totalKobo: 300_000 });
+      expect(r.loanReceived).toMatchObject({ present: false, count: 0, totalKobo: 0 });
+    });
+
+    it("flags the recurring DSTV subscription as a recurring expense, under its category", async () => {
+      const r = await svc.spendingAnalysis(spendId, { months: 6 }, NOW);
+      const dstv = r.recurringExpenses.items.find((i) => i.key.includes("DSTV"))!;
+      expect(dstv).toMatchObject({ recurring: true, months: 3, category: "bills_utilities", totalKobo: 1_860_000 });
+    });
+
+    it("flags exactly the one transaction that's well above this account's usual size", async () => {
+      const r = await svc.spendingAnalysis(spendId, { months: 6 }, NOW);
+      expect(r.unusualTransactions.map((u) => u.narration)).toEqual(["POS EXPENSIVE ITEM"]);
+    });
+
+    it("404s on another customer's account id", async () => {
+      await expect(svc.spendingAnalysis(spendId, { accountId: bolaAcct, months: 6 }, NOW)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // ── Employer verification (Phase 5, heuristics only) ────────────────────
+
+  describe("employer check", () => {
+    const NOW = new Date("2026-09-22T12:00:00Z");
+    let empN = 0;
+    const makeApplicant = async (employer: string | null, over: Partial<typeof applicantProfiles.$inferInsert> = {}) => {
+      empN += 1;
+      const id = await makeCustomer(`Employer Test ${empN}`);
+      await db.insert(applicantProfiles).values({
+        userId: id,
+        fullName: "Test Applicant",
+        phone: `2348099${String(empN).padStart(6, "0")}`,
+        employer,
+        employmentType: "Private",
+        ...over,
+      });
+      return id;
+    };
+
+    it("returns nulls throughout when no employer is declared", async () => {
+      const id = await makeCustomer("No Profile At All");
+      expect(await svc.employerCheck(id, NOW)).toEqual({ employer: null, employmentType: null, nameCheck: null, payment: null, sharedWith: null });
+
+      const id2 = await makeApplicant(null);
+      expect(await svc.employerCheck(id2, NOW)).toEqual({ employer: null, employmentType: "Private", nameCheck: null, payment: null, sharedWith: null });
+    });
+
+    it("flags a placeholder employer name as suspicious, and accepts an ordinary one", async () => {
+      const placeholder = await makeApplicant("test");
+      expect((await svc.employerCheck(placeholder, NOW)).nameCheck).toMatchObject({ suspicious: true });
+
+      const real = await makeApplicant("Chisom Textiles Nigeria Ltd");
+      expect((await svc.employerCheck(real, NOW)).nameCheck).toMatchObject({ suspicious: false });
+    });
+
+    it("matches the employer against the customer's own recurring salary credits", async () => {
+      const id = await makeApplicant("Acme Foods Ltd");
+      const acct = await makeAccount(id, `mono_emp_${empN}`);
+      for (const m of ["2026-04", "2026-05", "2026-06"]) {
+        await tx(id, acct, `emp_sal_${m}`, { narration: "NIP/ACME FOODS LTD/SALARY", amountKobo: 25_000_000n, occurredAt: new Date(`${m}-25T09:00:00Z`) });
+      }
+      const r = await svc.employerCheck(id, NOW);
+      expect(r.payment?.matched).toBe(true);
+      expect(r.payment?.source?.key).toContain("ACME");
+    });
+
+    it("reports unmatched — not a crash — when nothing in the bank data names the employer", async () => {
+      const id = await makeApplicant("Acme Foods Ltd");
+      const r = await svc.employerCheck(id, NOW);
+      expect(r.payment).toEqual({ matched: false, source: null });
+    });
+
+    it("counts other applicants sharing the same employer text, case/whitespace-insensitively, and excludes the customer themself", async () => {
+      const ids = [];
+      for (let i = 0; i < 6; i++) ids.push(await makeApplicant(i === 0 ? "  Obscure Traders  " : "obscure traders"));
+      const r = await svc.employerCheck(ids[0], NOW);
+      expect(r.sharedWith).toEqual({ count: 5, flagged: true });
+    });
+
+    it("does not flag an employer used by only a couple of other applicants", async () => {
+      const ids = [];
+      for (let i = 0; i < 2; i++) ids.push(await makeApplicant("Uncommon Employer Co"));
+      const r = await svc.employerCheck(ids[0], NOW);
+      expect(r.sharedWith).toEqual({ count: 1, flagged: false });
+    });
+  });
+
   // ── Access policy ────────────────────────────────────────────────────────
 
   describe("role policy", () => {
@@ -380,7 +520,7 @@ describe("Customer financial data (real Postgres)", () => {
 
     it("keeps sales out of every read by inheriting the controller default", () => {
       expect(controllerRoles).not.toContain("sales");
-      for (const m of ["transactions", "transaction", "statement", "incomeSources"] as const) {
+      for (const m of ["transactions", "transaction", "statement", "incomeSources", "spendingAnalysis", "employerCheck"] as const) {
         expect(rolesOf(m)).toBeUndefined(); // no narrowing → inherits the default
       }
     });

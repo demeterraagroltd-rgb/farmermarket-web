@@ -9,13 +9,17 @@ import { HttpMonoClient } from "./http-mono.client";
 // exercised directly against a mocked `fetch` rather than only through the
 // fake client the rest of the suite uses.
 
-function mockFetch(body: unknown, ok = true, status = 200) {
-  return vi.fn(async (url: string) => ({
+/** The spy form, for a test that inspects the call (e.g. the query string). */
+function mockFetchSpy(body: unknown, ok = true, status = 200) {
+  return vi.fn(async (_url: string) => ({
     ok,
     status,
     text: async () => JSON.stringify(body),
-    __url: url,
-  })) as unknown as typeof fetch;
+  }));
+}
+/** The plain `global.fetch` form, for a test that only cares about the response. */
+function mockFetch(body: unknown, ok = true, status = 200): typeof fetch {
+  return mockFetchSpy(body, ok, status) as unknown as typeof fetch;
 }
 
 describe("HttpMonoClient", () => {
@@ -29,8 +33,8 @@ describe("HttpMonoClient", () => {
     it("sends both start and end — Mono rejects one without the other", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-09-22T12:00:00Z"));
-      const fetchMock = mockFetch({ status: "success", data: [] });
-      global.fetch = fetchMock;
+      const fetchMock = mockFetchSpy({ status: "success", data: [] });
+      global.fetch = fetchMock as unknown as typeof fetch;
 
       const client = new HttpMonoClient("sk_test");
       await client.getTransactions("acc_1", 6);

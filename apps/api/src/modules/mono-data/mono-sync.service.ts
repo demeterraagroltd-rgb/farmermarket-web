@@ -17,6 +17,7 @@ import { MONO_CLIENT, type MonoClient, type MonoIncome, type MonoTransaction, ty
 import { ANALYSIS_VERSION, analyseBank, type BankAnalysis } from "../kyc/bank-analysis";
 import { prepareTransactions } from "./transaction-dedupe";
 import { rawExpiry, rawStorageEnabled, retentionConfig, sealRaw, transactionCutoff } from "./raw-response";
+import { categorizeTransaction } from "./transaction-categorization";
 
 export type SyncTrigger = "link" | "customer" | "admin" | "webhook" | "system";
 
@@ -431,6 +432,9 @@ export class MonoSyncService {
         occurredAt: new Date(t.date),
         balanceAfterKobo: t.balanceKobo == null ? null : BigInt(Math.round(t.balanceKobo)),
         providerCategory: t.category,
+        // Our own inference, refreshed from the current rules on every sync —
+        // see transaction-categorization.ts. Never edits `narration`.
+        category: categorizeTransaction({ narration: t.narration ?? "", direction: t.type, channel: t.category }),
         raw: t,
         retrievedAt: now,
         lastSeenAt: now,
@@ -445,6 +449,7 @@ export class MonoSyncService {
             lastSeenAt: now,
             balanceAfterKobo: sql`excluded.balance_after_kobo`,
             providerCategory: sql`excluded.provider_category`,
+            category: sql`excluded.category`,
             raw: sql`excluded.raw`,
             dataVersion: MONO_DATA_VERSION,
           },

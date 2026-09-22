@@ -564,3 +564,155 @@ export const ENDPOINT_LABEL: Record<string, string> = {
   transactions: "Transactions",
   income: "Income",
 };
+
+// ── Spending analysis & employer check (Phase 5) ───────────────────────────
+// Mirrors apps/api/src/modules/mono-data/{transaction-categorization,spending-signals,recurring-expenses,employer-signals}.ts
+
+export const TRANSACTION_CATEGORIES = [
+  "salary",
+  "loan_disbursement",
+  "loan_repayment",
+  "gambling",
+  "savings_investment",
+  "airtime_data",
+  "bills_utilities",
+  "atm_withdrawal",
+  "pos_purchase",
+  "fees_charges",
+  "reversal_refund",
+  "transfer",
+  "other",
+] as const;
+export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
+
+export const CATEGORY_LABEL: Record<TransactionCategory, string> = {
+  salary: "Salary",
+  loan_disbursement: "Loan received",
+  loan_repayment: "Loan repayment",
+  gambling: "Gambling",
+  savings_investment: "Savings / investment",
+  airtime_data: "Airtime & data",
+  bills_utilities: "Bills & utilities",
+  atm_withdrawal: "ATM withdrawal",
+  pos_purchase: "POS purchase",
+  fees_charges: "Fees & charges",
+  reversal_refund: "Reversal / refund",
+  transfer: "Transfer",
+  other: "Other",
+};
+/** A consistent colour per category across the breakdown chips and chart. */
+export const CATEGORY_COLOR: Record<TransactionCategory, string> = {
+  salary: "var(--color-primary)",
+  loan_disbursement: "var(--color-info)",
+  loan_repayment: "var(--color-error)",
+  gambling: "var(--color-error)",
+  savings_investment: "var(--color-success)",
+  airtime_data: "var(--color-gold)",
+  bills_utilities: "var(--color-gold)",
+  atm_withdrawal: "var(--color-text-muted)",
+  pos_purchase: "var(--color-text-medium)",
+  fees_charges: "var(--color-warning)",
+  reversal_refund: "var(--color-text-muted)",
+  transfer: "var(--color-text-medium)",
+  other: "var(--color-text-muted)",
+};
+
+export interface CategoryBreakdownRow {
+  category: TransactionCategory;
+  label: string;
+  count: number;
+  creditsKobo: number;
+  debitsKobo: number;
+  totalKobo: number;
+}
+
+export interface CashFlowMonth {
+  month: string;
+  creditsKobo: number;
+  debitsKobo: number;
+  netKobo: number;
+}
+
+export interface CategorySignal {
+  category: TransactionCategory;
+  present: boolean;
+  count: number;
+  totalKobo: number;
+  monthsActive: number;
+  monthsCovered: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  trend: "increasing" | "decreasing" | "steady" | null;
+  samples: string[];
+}
+
+export interface UnusualTransaction {
+  id: string;
+  occurredAt: string;
+  narration: string;
+  direction: "credit" | "debit";
+  amountKobo: number;
+  category: TransactionCategory;
+  multiple: number;
+}
+
+export interface RecurringExpense {
+  key: string;
+  label: string;
+  category: TransactionCategory;
+  count: number;
+  months: number;
+  totalKobo: number;
+  averageKobo: number;
+  lastAt: string;
+  typicalDay: number | null;
+  shareOfDebits: number;
+  recurring: boolean;
+  samples: string[];
+}
+
+export interface RecurringExpensesResult {
+  items: RecurringExpense[];
+  totalDebitsKobo: number;
+  otherKobo: number;
+  monthsCovered: number;
+}
+
+export interface SpendingAnalysis {
+  months: number;
+  transactionsAnalysed: number;
+  categoryBreakdown: CategoryBreakdownRow[];
+  cashFlow: CashFlowMonth[];
+  loanRepayment: CategorySignal;
+  loanReceived: CategorySignal;
+  gambling: CategorySignal;
+  recurringExpenses: RecurringExpensesResult;
+  unusualTransactions: UnusualTransaction[];
+}
+
+export const TREND_LABEL: Record<NonNullable<CategorySignal["trend"]>, string> = {
+  increasing: "Increasing",
+  decreasing: "Decreasing",
+  steady: "Steady",
+};
+export const TREND_TONE: Record<NonNullable<CategorySignal["trend"]>, "success" | "warning" | "error" | "neutral"> = {
+  increasing: "warning",
+  decreasing: "success",
+  steady: "neutral",
+};
+
+export interface EmployerNameCheck {
+  suspicious: boolean;
+  reasons: string[];
+}
+export interface EmployerPaymentMatch {
+  matched: boolean;
+  source: IncomeSource | null;
+}
+export interface EmployerCheck {
+  employer: string | null;
+  employmentType: string | null;
+  nameCheck: EmployerNameCheck | null;
+  payment: EmployerPaymentMatch | null;
+  sharedWith: { count: number; flagged: boolean } | null;
+}

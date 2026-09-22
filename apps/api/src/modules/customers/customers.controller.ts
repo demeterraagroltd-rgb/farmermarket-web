@@ -13,11 +13,13 @@ import { CustomerFinancialService } from "./customer-financial.service";
 import {
   incomeSourcesQuerySchema,
   rawListQuerySchema,
+  spendingAnalysisQuerySchema,
   statementQuerySchema,
   transactionFilterSchema,
   transactionListSchema,
   type IncomeSourcesQueryInput,
   type RawListQueryInput,
+  type SpendingAnalysisQueryInput,
   type StatementQueryInput,
   type TransactionFilterInput,
   type TransactionListInput,
@@ -111,6 +113,25 @@ export class CustomersController {
     @Query(new ZodValidationPipe(incomeSourcesQuerySchema)) query: IncomeSourcesQueryInput,
   ) {
     return this.financial.incomeSources(id, query);
+  }
+
+  // Category breakdown, recurring expenses, loan/gambling exposure and
+  // unusual transactions — all derived from the stored window, nothing new
+  // to fetch from Mono.
+  @Get(":id/spending-analysis")
+  spendingAnalysis(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query(new ZodValidationPipe(spendingAnalysisQuerySchema)) query: SpendingAnalysisQueryInput,
+  ) {
+    return this.financial.spendingAnalysis(id, query);
+  }
+
+  // Heuristics only (no registry lookup — see employer-signals.ts): does the
+  // employer's name look like a placeholder, and does the customer's own
+  // bank data show that employer actually paying them.
+  @Get(":id/employer-check")
+  employerCheck(@Param("id", new ParseUUIDPipe()) id: string) {
+    return this.financial.employerCheck(id);
   }
 
   // Mono's original responses — customer data in its rawest form, so admin and

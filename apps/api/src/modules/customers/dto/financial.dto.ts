@@ -68,11 +68,17 @@ export const statementQuerySchema = z
   .superRefine(orderedRange);
 export type StatementQueryInput = z.infer<typeof statementQuerySchema>;
 
-export const incomeSourcesQuerySchema = z.object({
+const monthsWindowQuerySchema = z.object({
   accountId: z.string().uuid().optional(),
   months: z.coerce.number().int().min(1).max(24).default(6),
 });
+
+export const incomeSourcesQuerySchema = monthsWindowQuerySchema;
 export type IncomeSourcesQueryInput = z.infer<typeof incomeSourcesQuerySchema>;
+
+/** Same window shape as income sources — the category breakdown, loan/gambling signals and recurring expenses all read the same range. */
+export const spendingAnalysisQuerySchema = monthsWindowQuerySchema;
+export type SpendingAnalysisQueryInput = z.infer<typeof spendingAnalysisQuerySchema>;
 
 export const rawListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),

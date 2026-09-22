@@ -41,7 +41,7 @@ function median(xs: number[]): number {
 }
 
 /** "ACME CORP LTD (NIGERIA)" → ["ACME","CORP"] — drop filler so a match is meaningful. */
-function employerTokens(employer: string): string[] {
+export function employerTokens(employer: string): string[] {
   return employer
     .toUpperCase()
     .replace(/[^A-Z0-9 ]/g, " ")
