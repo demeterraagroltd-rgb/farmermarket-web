@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import {
   applicantProfiles,
   bankAccounts,
@@ -93,6 +93,52 @@ export class MonoSyncService {
     if (existing && existing.userId !== userId) {
       throw new ConflictException("This bank account is already linked to a different customer.");
     }
+  }
+
+  /** The last few sync outcomes for one account, newest first — what {@link consecutiveFailures} reads. */
+  async recentLogStatuses(bankAccountId: string, limit = 10): Promise<Array<{ status: string }>> {
+    return this.db
+      .select({ status: monoSyncLogs.status })
+      .from(monoSyncLogs)
+      .where(eq(monoSyncLogs.bankAccountId, bankAccountId))
+      .orderBy(desc(monoSyncLogs.startedAt))
+      .limit(limit);
+  }
+
+  /**
+   * Records that a refresh was *decided against* rather than attempted — the
+   * `skipped` sync status exists for exactly this. Never calls Mono. Kept on
+   * `MonoSyncService` alongside the write it mirrors (a real sync's log row),
+   * so the sync-history table's "why is this stale?" answer includes "we
+   * looked and decided not to", not just failures and successes.
+   */
+  async logSkipped(params: {
+    userId: string;
+    bankAccountId: string;
+    monoAccountId: string;
+    trigger: SyncTrigger;
+    staffId?: string | null;
+    reason: string;
+  }): Promise<{ syncLogId: string }> {
+    const id = randomUUID();
+    const now = new Date();
+    await this.db.insert(monoSyncLogs).values({
+      id,
+      userId: params.userId,
+      bankAccountId: params.bankAccountId,
+      monoAccountId: params.monoAccountId,
+      trigger: params.trigger,
+      triggeredByStaffId: params.staffId ?? null,
+      status: "skipped",
+      startedAt: now,
+      finishedAt: now,
+      durationMs: 0,
+      endpoints: { reason: params.reason },
+      transactionsFetched: 0,
+      transactionsInserted: 0,
+      errorMessage: null,
+    });
+    return { syncLogId: id };
   }
 
   async sync(opts: SyncOptions): Promise<SyncResult> {

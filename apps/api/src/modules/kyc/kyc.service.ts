@@ -39,6 +39,7 @@ import {
 } from "../integrations/mono-lookup/lookup.types";
 import type { BankAnalysis } from "./bank-analysis";
 import { MonoSyncService } from "../mono-data/mono-sync.service";
+import { consecutiveFailures, decideRefresh } from "../mono-data/refresh-policy";
 import { recordIdentityVerification } from "../mono-data/identity-verifications";
 import { matchIdentity } from "./identity-match";
 import type {
@@ -81,11 +82,6 @@ const BVN_CONSENT_TTL_MS = 10 * 60 * 1000;
 // client and can read as abuse to NIBSS.
 const BVN_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 
-// Minimum gap between admin-triggered Mono pulls for one customer. A crude
-// guard against a double-click or an impatient re-click hammering Mono; the
-// freshness policy that replaces it decides *whether* a refresh is warranted at
-// all, rather than just spacing them out.
-const ADMIN_BANK_REFRESH_COOLDOWN_MS = 60 * 1000;
 
 type ProfileWrite = Partial<typeof applicantProfiles.$inferInsert>;
 
@@ -459,27 +455,44 @@ export class KycService {
     if (!profile.monoAccountId) {
       throw new BadRequestException("This customer hasn't linked a bank account, so there's nothing to refresh.");
     }
-    // Space refreshes from the last *attempt*, not just the last success — a
-    // failing account must not be retried on every click.
     const [account] = await this.db
-      .select({ lastSyncAttemptAt: bankAccounts.lastSyncAttemptAt })
+      .select({ id: bankAccounts.id, lastSyncedAt: bankAccounts.lastSyncedAt, lastSyncAttemptAt: bankAccounts.lastSyncAttemptAt })
       .from(bankAccounts)
       .where(eq(bankAccounts.monoAccountId, profile.monoAccountId))
       .limit(1);
+    // A legacy/backfilled account can have a bank_analysis snapshot with no
+    // bank_accounts row backing it at all yet — fall back to the snapshot's
+    // own timestamp for the flood guard, same anchor the old cooldown used.
     const analysedAt = (profile.bankAnalysis as BankAnalysis | null)?.pulledAt;
-    const anchors = [account?.lastSyncAttemptAt?.getTime(), analysedAt ? Date.parse(analysedAt) : undefined].filter(
-      (n): n is number => typeof n === "number" && Number.isFinite(n),
-    );
-    if (anchors.length) {
-      const sinceMs = Date.now() - Math.max(...anchors);
-      if (sinceMs < ADMIN_BANK_REFRESH_COOLDOWN_MS) {
-        const wait = Math.ceil((ADMIN_BANK_REFRESH_COOLDOWN_MS - sinceMs) / 1000);
-        throw new HttpException(
-          `Bank data was refreshed a moment ago — try again in ${wait}s.`,
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+    const lastSyncAttemptAt =
+      account?.lastSyncAttemptAt ?? (analysedAt && Number.isFinite(Date.parse(analysedAt)) ? new Date(analysedAt) : null);
+
+    const recent = account ? await this.monoSync.recentLogStatuses(account.id, 10) : [];
+    const decision = decideRefresh({
+      trigger: "admin",
+      lastSyncedAt: account?.lastSyncedAt ?? null,
+      lastSyncAttemptAt,
+      lastSyncStatus: (recent[0]?.status as "success" | "partial" | "failed" | "skipped" | undefined) ?? null,
+      consecutiveFailures: consecutiveFailures(recent),
+    });
+
+    if (!decision.shouldRefresh) {
+      if (account) {
+        await this.monoSync.logSkipped({
+          userId,
+          bankAccountId: account.id,
+          monoAccountId: profile.monoAccountId,
+          trigger: "admin",
+          staffId,
+          reason: `admin refresh declined: ${decision.reason}`,
+        });
       }
+      throw new HttpException(
+        `Bank data was refreshed a moment ago — try again in ${decision.retryAfterSeconds}s.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
+
     const { analysis, preserved } = await this.monoSync.sync({
       userId,
       monoAccountId: profile.monoAccountId,

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { desc, eq } from "drizzle-orm";
-import { applicantProfiles, auditLogs, staff, users, type Db } from "@farmermarket/db";
+import { applicantProfiles, auditLogs, monoSyncLogs, staff, users, type Db } from "@farmermarket/db";
 import { createTestDb, type TestDb } from "../../test/test-db";
 import { KycService } from "./kyc.service";
 import { MonoSyncService } from "../mono-data/mono-sync.service";
@@ -135,11 +135,28 @@ describe("KYC staff actions (real Postgres)", () => {
       expect(log.action).toBe("customer.bank_data_refreshed");
     });
 
-    it("throttles a second refresh moments later with a 429", async () => {
+    it("throttles a second refresh moments later with a 429, and logs the decline as 'skipped'", async () => {
       const id = await seed("2348200000003", { monoAccountId: "acc_2" });
       const svc = service(new FakeMonoClient());
       await svc.refreshBankDataForStaff(staffId, id);
       await expect(svc.refreshBankDataForStaff(staffId, id)).rejects.toMatchObject({ status: 429 });
+
+      const logs = await db
+        .select()
+        .from(monoSyncLogs)
+        .where(eq(monoSyncLogs.monoAccountId, "acc_2"))
+        .orderBy(desc(monoSyncLogs.startedAt));
+      expect(logs[0]).toMatchObject({ status: "skipped", trigger: "admin", triggeredByStaffId: staffId });
+      // ...without disturbing the real sync's own log row from moments before.
+      expect(logs[1]).toMatchObject({ status: "success", trigger: "admin" });
+    });
+
+    it("still throttles a legacy account with only a bank_analysis snapshot and no bank_accounts row", async () => {
+      const id = await seed("2348200000006", {
+        monoAccountId: "acc_legacy",
+        bankAnalysis: { pulledAt: new Date().toISOString(), source: "income_api" },
+      });
+      await expect(service(new FakeMonoClient()).refreshBankDataForStaff(staffId, id)).rejects.toMatchObject({ status: 429 });
     });
 
     it("keeps the last good analysis when Mono comes back empty", async () => {

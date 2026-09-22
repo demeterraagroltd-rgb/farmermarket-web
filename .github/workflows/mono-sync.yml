@@ -1,0 +1,47 @@
+name: Scheduled Mono sync
+
+# The "system" half of the bank-data freshness policy (§ refresh-policy.ts):
+# sweeps every linked, active bank account and re-pulls the ones that have
+# actually gone stale (or failed and are past their back-off), leaving the
+# rest untouched. Safe to run often — most accounts will be skipped on any
+# given run — so four times a day keeps every account within a few hours of
+# the 24-hour freshness window without hammering Mono.
+#
+# Setup: reuses the same two repo secrets as the daily collections run —
+#   COLLECTIONS_API_URL     e.g. https://farmermarket-api-nsjd.onrender.com
+#   COLLECTIONS_CRON_SECRET the same value set on the API's env
+# (CronSecretGuard is shared across every machine-triggered endpoint in this
+# app, not specific to collections — see its own doc comment.)
+on:
+  schedule:
+    - cron: "15 */6 * * *" # 00:15, 06:15, 12:15, 18:15 UTC
+  workflow_dispatch: {} # allow a manual run from the Actions tab
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /v1/mono/sync-cron
+        env:
+          API_URL: ${{ secrets.COLLECTIONS_API_URL }}
+          CRON_SECRET: ${{ secrets.COLLECTIONS_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "COLLECTIONS_API_URL / COLLECTIONS_CRON_SECRET repo secrets are not set." >&2
+            exit 1
+          fi
+          # Render free tier can be cold — one retry after a short wait.
+          for attempt in 1 2; do
+            if curl -fsS --max-time 300 -X POST "$API_URL/v1/mono/sync-cron" \
+                 -H "x-cron-secret: $CRON_SECRET" \
+                 -H "content-type: application/json" -d '{}' ; then
+              echo
+              echo "mono sync sweep ok (attempt $attempt)"
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying in 30s" >&2
+            sleep 30
+          done
+          echo "mono sync sweep failed after 2 attempts" >&2
+          exit 1
