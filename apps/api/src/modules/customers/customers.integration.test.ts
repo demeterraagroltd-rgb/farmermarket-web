@@ -5,6 +5,8 @@ import {
   applicationDecisions,
   applications,
   auditLogs,
+  bankAccounts,
+  bankTransactions,
   bnplPlans,
   creditProfiles,
   orderItems,
@@ -295,12 +297,33 @@ describe("Customer 360 (real Postgres)", () => {
       expect(d.declared).not.toHaveProperty("recordName");
     });
 
+    it("reports how much transaction history is stored — a count and a range, never the rows", async () => {
+      const [u] = await db.insert(users).values({ phone: "2348055550001", fullName: "Has Txns" }).returning();
+      const [acct] = await db
+        .insert(bankAccounts)
+        .values({ userId: u.id, monoAccountId: "acc_txn_cov" })
+        .returning({ id: bankAccounts.id });
+      const base = { userId: u.id, bankAccountId: acct.id, monoAccountId: "acc_txn_cov", direction: "credit" as const, amountKobo: 100n, retrievedAt: new Date() };
+      await db.insert(bankTransactions).values([
+        { ...base, externalId: "t1", occurredAt: new Date("2026-03-05T10:00:00Z") },
+        { ...base, externalId: "t2", occurredAt: new Date("2026-08-20T10:00:00Z") },
+      ]);
+      const d = await c360.getDetail(staffId, u.id);
+      expect(d.bank.transactions).toEqual({
+        count: 2,
+        earliest: "2026-03-05T10:00:00.000Z",
+        latest: "2026-08-20T10:00:00.000Z",
+      });
+      expect(JSON.stringify(d)).not.toContain("t1");
+    });
+
     it("returns an empty-but-valid shape for a customer with no KYC profile", async () => {
       const d = await c360.getDetail(staffId, bareId);
       expect(d.declared).toBeNull();
       expect(d.summary.kycStatus).toBe("unverified");
       expect(d.summary.bankState).toBe("not_connected");
       expect(d.bank.accounts).toEqual([]);
+      expect(d.bank.transactions).toEqual({ count: 0, earliest: null, latest: null });
       expect(d.orders).toEqual([]);
       expect(d.repayments.summary.collectionStatus).toBe("none");
       expect(d.identity.bvn.state).toBe("not_provided");

@@ -5,7 +5,7 @@ import { Badge } from "../../ui/Badge";
 import { Card } from "../../ui/Card";
 import { formatDate, formatDateTime, formatNaira, formatNairaAmount } from "../../../lib/format";
 import { ACTION_LABEL, COLLECTION_LABEL, COLLECTION_TONE, timeAgo } from "../../../lib/customer360";
-import { DataTable, NotStoredYet, Section, Td, type TabProps } from "./parts";
+import { DataTable, Section, Td, type TabProps } from "./parts";
 
 const ORDER_TONE: Record<string, "success" | "error" | "gold" | "info" | "neutral"> = {
   pending_approval: "gold",
@@ -260,26 +260,5 @@ export function ActivityTab({ data }: TabProps) {
         Shows the most recent 200 actions. IP address and device aren&apos;t captured yet.
       </p>
     </div>
-  );
-}
-
-// ── Not built yet ─────────────────────────────────────────────────────────
-
-export function TransactionsTab() {
-  return (
-    <NotStoredYet title="Transactions aren't stored yet">
-      Today only a summary of the bank data is kept, so there&apos;s no transaction list to search. Persistent
-      transaction storage is the next stage; once it lands this tab becomes a searchable, filterable table with
-      expandable rows.
-    </NotStoredYet>
-  );
-}
-
-export function StatementsTab() {
-  return (
-    <NotStoredYet title="Statements aren't stored yet">
-      Bank statements will be shown here as a readable statement once statement data is persisted. Nothing has been
-      stored for this customer yet.
-    </NotStoredYet>
   );
 }

@@ -27,8 +27,8 @@ export interface BankAnalysis {
  */
 export const ANALYSIS_VERSION = 1;
 
-const SALARY_FLOOR_KOBO = 3_000_000; // ₦30,000 — below this we don't call it salary
-const SALARY_KEYWORDS = /\b(salary|sal|payroll|wages|remuneration|stipend)\b/i;
+export const SALARY_FLOOR_KOBO = 3_000_000; // ₦30,000 — below this we don't call it salary
+export const SALARY_KEYWORDS = /\b(salary|sal|payroll|wages|remuneration|stipend)\b/i;
 
 function monthKey(iso: string): string {
   return iso.slice(0, 7); // YYYY-MM

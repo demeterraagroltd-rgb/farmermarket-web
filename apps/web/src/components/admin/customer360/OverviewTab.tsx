@@ -59,7 +59,13 @@ export function OverviewTab({ data, reload, goTab }: TabProps) {
         <Row label="Bank connection" value={<Badge tone={BANK_TONE[bank.state]}>{BANK_LABEL[bank.state]}</Badge>} />
         <Row
           label="Transactions"
-          value={financial.monthsAnalysed > 0 ? `Analysed over ${financial.monthsAnalysed} months (summary only)` : "None analysed"}
+          value={
+            bank.transactions.count > 0
+              ? `${bank.transactions.count.toLocaleString()} stored · ${formatDate(bank.transactions.earliest)} – ${formatDate(bank.transactions.latest)}`
+              : financial.monthsAnalysed > 0
+                ? `None stored yet (analysed over ${financial.monthsAnalysed} months from a summary)`
+                : "None stored"
+          }
         />
         <Row label="Income" value={financial.retrievedAt ? <Updated at={financial.retrievedAt} /> : "Not pulled yet"} />
         <Row

@@ -9,15 +9,18 @@ import {
   ACCOUNT_STATUS_TONE,
   SYNC_STATUS_TONE,
   SYNC_TRIGGER_LABEL,
+  canSeeRawData,
   timeAgo,
 } from "../../../lib/customer360";
 import { BankAnalysisView } from "../kyc-review";
 import { DataTable, Row, Section, FreshnessBadge, NotStoredYet, Td, Updated, type TabProps } from "./parts";
 import { useBankRefresh } from "./useBankRefresh";
+import { IncomeSources } from "./IncomeSources";
+import { RawResponses } from "./RawResponses";
 
 // ── Bank accounts ─────────────────────────────────────────────────────────
 
-export function BankTab({ data, reload, goTab }: TabProps) {
+export function BankTab({ data, reload, goTab, role }: TabProps) {
   const { bank, customer } = data;
   const { refresh, busy, message } = useBankRefresh(customer.id, reload);
 
@@ -138,6 +141,8 @@ export function BankTab({ data, reload, goTab }: TabProps) {
           </DataTable>
         )}
       </Section>
+
+      {canSeeRawData(role) && <RawResponses customerId={customer.id} />}
     </div>
   );
 }
@@ -258,12 +263,9 @@ export function FinancialTab({ data, reload }: TabProps) {
 
       <Section
         title="Income sources"
-        description="Salary and other recurring income, broken out by payer."
+        description="Salary and other recurring income, grouped by payer from the stored transactions."
       >
-        <NotStoredYet title="Needs stored transactions">
-          Income sources and recurring income are worked out from individual transactions. Those aren&apos;t stored yet —
-          today only the summary above is kept. This section fills in once transaction storage is added.
-        </NotStoredYet>
+        <IncomeSources customerId={data.customer.id} />
       </Section>
 
       <p className="text-xs text-text-muted">

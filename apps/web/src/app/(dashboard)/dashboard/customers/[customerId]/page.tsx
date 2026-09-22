@@ -17,9 +17,9 @@ import {
   ApplicationsTab,
   OrdersTab,
   RepaymentsTab,
-  StatementsTab,
-  TransactionsTab,
 } from "../../../../../components/admin/customer360/CommerceTabs";
+import { StatementsTab } from "../../../../../components/admin/customer360/StatementsTab";
+import { TransactionsTab } from "../../../../../components/admin/customer360/TransactionsTab";
 import { CustomerHeader } from "../../../../../components/admin/customer360/CustomerHeader";
 import type { TabProps } from "../../../../../components/admin/customer360/parts";
 
@@ -126,9 +126,9 @@ function Customer360Page() {
               case "financial":
                 return <FinancialTab {...props} />;
               case "transactions":
-                return <TransactionsTab />;
+                return <TransactionsTab {...props} />;
               case "statements":
-                return <StatementsTab />;
+                return <StatementsTab {...props} />;
               case "orders":
                 return <OrdersTab {...props} />;
               case "repayments":

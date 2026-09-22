@@ -43,7 +43,13 @@ async function bootstrap() {
   const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
     .map((origin) => origin.trim());
-  app.enableCors({ origin: allowedOrigins, credentials: true });
+  // The export download reads these from the response, which a browser hides from
+  // cross-origin scripts unless they are listed.
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    exposedHeaders: ["Content-Disposition", "X-Export-Rows", "X-Export-Truncated"],
+  });
 
   // Feeds packages/contracts' codegen pipeline (§5.6).
   const config = new DocumentBuilder()

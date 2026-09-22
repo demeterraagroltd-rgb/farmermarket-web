@@ -195,6 +195,8 @@ export interface Customer360 {
       lastSyncAt: string | null;
       freshness: Freshness;
     }>;
+    /** Stored transaction history: how much, and over what range. */
+    transactions: { count: number; earliest: string | null; latest: string | null };
     /** The last ten attempts to reach Mono, failures included. */
     syncHistory: Array<{
       id: string;
@@ -433,4 +435,132 @@ export const ACTION_LABEL: Record<string, string> = {
   "kyc.bank_link_requested": "Requested bank verification",
   "kyc.nin_lookup": "Verified NIN",
   "kyc.mashup_lookup": "Verified BVN + NIN",
+  "customer.transaction_raw_viewed": "Viewed a transaction's raw Mono record",
+  "customer.transactions_exported": "Exported bank transactions",
+  "customer.mono_raw_viewed": "Viewed a raw Mono response",
+};
+
+// ── Stored bank data (Phase 4) ─────────────────────────────────────────────
+// Mirrors apps/api/src/modules/customers/customer-financial.service.ts.
+
+export interface FinancialAccount {
+  id: string;
+  label: string;
+  institution: string | null;
+  accountName: string | null;
+  accountMasked: string | null;
+  status: "active" | "disconnected" | "reauth_required";
+}
+
+export interface BankTransaction {
+  id: string;
+  bankAccountId: string;
+  direction: "credit" | "debit";
+  amountKobo: number;
+  narration: string;
+  occurredAt: string;
+  balanceAfterKobo: number | null;
+  /** Mono's own channel label — not our classification. */
+  channel: string | null;
+  /** Our analytical category; null until the analysis phase fills it. */
+  category: string | null;
+  retrievedAt: string;
+}
+
+export interface TransactionPage {
+  items: BankTransaction[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  summary: { creditsKobo: number; debitsKobo: number; netKobo: number };
+  coverage: { total: number; earliest: string | null; latest: string | null; dataAsOf: string | null };
+  channels: string[];
+  accounts: FinancialAccount[];
+}
+
+export interface TransactionDetail extends BankTransaction {
+  externalId: string;
+  firstSeenAt: string;
+  /** Present only for roles allowed to see Mono's original record. */
+  raw?: unknown;
+}
+
+export interface StatementPeriod {
+  month: string;
+  from: string;
+  to: string;
+  count: number;
+  creditsKobo: number;
+  debitsKobo: number;
+  netKobo: number;
+  openingKobo: number | null;
+  closingKobo: number | null;
+}
+
+export interface StatementView {
+  accounts: FinancialAccount[];
+  accountId: string | null;
+  periods: StatementPeriod[];
+  totals: { count: number; creditsKobo: number; debitsKobo: number; netKobo: number } | null;
+  range: { from: string; to: string } | null;
+  dataAsOf: string | null;
+}
+
+export interface IncomeSource {
+  key: string;
+  label: string;
+  count: number;
+  months: number;
+  totalKobo: number;
+  averageKobo: number;
+  lastAt: string;
+  typicalDay: number | null;
+  shareOfCredits: number;
+  recurring: boolean;
+  likelySalary: boolean;
+  samples: string[];
+}
+
+export interface IncomeSourcesView {
+  months: number;
+  creditsAnalysed: number;
+  sources: IncomeSource[];
+  totalCreditsKobo: number;
+  otherKobo: number;
+  monthsCovered: number;
+}
+
+export interface RawResponseMeta {
+  id: string;
+  endpoint: string;
+  retrievedAt: string;
+  expiresAt: string;
+  payloadBytes: number;
+  syncLogId: string | null;
+  bankAccountId: string | null;
+  trigger: string | null;
+}
+
+export interface RawResponseList {
+  storageEnabled: boolean;
+  items: RawResponseMeta[];
+}
+
+export interface RawResponseView {
+  id: string;
+  endpoint: string;
+  retrievedAt: string;
+  expiresAt: string;
+  payloadBytes: number;
+  payload: unknown;
+}
+
+/** Roles that may see Mono's original records and export data. Mirrors the API. */
+export const canSeeRawData = (role: string | null) => role === "super_admin" || role === "admin";
+
+export const ENDPOINT_LABEL: Record<string, string> = {
+  account_details: "Account details",
+  transactions: "Transactions",
+  income: "Income",
 };

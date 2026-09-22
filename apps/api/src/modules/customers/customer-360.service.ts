@@ -1,11 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { koboToNaira } from "@farmermarket/core";
 import {
   applicationDecisions,
   applications,
   auditLogs,
   bankAccounts,
+  bankTransactions,
   monoSyncLogs,
   repaymentSchedules,
   repayments,
@@ -61,7 +62,7 @@ export class Customer360Service {
     const [user] = await this.db.select().from(users).where(eq(users.id, customerId)).limit(1);
     if (!user) throw new NotFoundException("Customer not found");
 
-    const [kycView, creditPosition, orderList, applicationRows, paymentRows, auditRows, identityHistory, accountRows, syncRows] =
+    const [kycView, creditPosition, orderList, applicationRows, paymentRows, auditRows, identityHistory, accountRows, syncRows, [txCoverage]] =
       await Promise.all([
       // A customer created before KYC existed has a users row but no profile —
       // that is a legitimate (empty) state for this page, not a 404.
@@ -119,6 +120,15 @@ export class Customer360Service {
         .where(eq(monoSyncLogs.userId, customerId))
         .orderBy(desc(monoSyncLogs.startedAt))
         .limit(10),
+      // How much stored transaction history there is — a count and a range, never rows.
+      this.db
+        .select({
+          total: sql<string>`count(*)`,
+          earliest: sql<Date | null>`min(${bankTransactions.occurredAt})`,
+          latest: sql<Date | null>`max(${bankTransactions.occurredAt})`,
+        })
+        .from(bankTransactions)
+        .where(eq(bankTransactions.userId, customerId)),
     ]);
 
     // Decisions for the applications above, newest first, so the latest wins
@@ -319,6 +329,11 @@ export class Customer360Service {
         state: bankState,
         requestedAt: profile?.bankLinkRequestedAt ?? null,
         accounts,
+        transactions: {
+          count: Number(txCoverage.total),
+          earliest: txCoverage.earliest ? new Date(txCoverage.earliest).toISOString() : null,
+          latest: txCoverage.latest ? new Date(txCoverage.latest).toISOString() : null,
+        },
         // The last ten attempts to talk to Mono, failures included — the answer
         // to "why is this data stale?".
         syncHistory: syncRows.map((s) => ({
