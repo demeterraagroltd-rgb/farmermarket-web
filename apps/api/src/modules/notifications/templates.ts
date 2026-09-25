@@ -143,6 +143,29 @@ export const emails = {
     ),
   }),
 
+  // ── Auto-debit ───────────────────────────────────────────────────────
+  autoDebitFailed: (
+    name: string,
+    opts: { amount: string; installmentNumber: number; totalInstallments: number; reason: string; willRetry: boolean },
+  ) => ({
+    subject: `We couldn't collect ${opts.amount} from your account`,
+    html: wrap(
+      `<p>Hi ${esc(name)},</p><p>We tried to collect installment ${opts.installmentNumber} of ${opts.totalInstallments}` +
+        ` — <strong>${esc(opts.amount)}</strong> — from your bank account, but ${esc(opts.reason)}.</p>` +
+        (opts.willRetry
+          ? `<p>We'll try again automatically, so please make sure the money is in the account. Or you can pay it yourself now:</p>`
+          : `<p>We won't retry automatically, so please pay this installment yourself as soon as you can:</p>`) +
+        cta(customerLinks.repayments(), "Make a payment"),
+    ),
+  }),
+  autoDebitNeedsReview: (name: string, opts: { amount: string }) => ({
+    subject: "We're checking a payment from your account",
+    html: wrap(
+      `<p>Hi ${esc(name)},</p><p>A debit of <strong>${esc(opts.amount)}</strong> from your bank account needs a manual check on our side. ` +
+        `We'll sort it out and email you — you don't need to do anything, and please don't pay this installment again until we do.</p>`,
+    ),
+  }),
+
   // ── Verification ─────────────────────────────────────────────────────
   verificationSubmitted: (name: string) => ({
     subject: "We've received your verification",

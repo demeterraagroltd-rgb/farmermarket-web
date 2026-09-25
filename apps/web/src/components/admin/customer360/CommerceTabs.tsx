@@ -6,6 +6,7 @@ import { Card } from "../../ui/Card";
 import { formatDate, formatDateTime, formatNaira, formatNairaAmount } from "../../../lib/format";
 import { ACTION_LABEL, COLLECTION_LABEL, COLLECTION_TONE, timeAgo } from "../../../lib/customer360";
 import { DataTable, Section, Td, type TabProps } from "./parts";
+import { AutoDebitSection } from "./AutoDebitSection";
 
 const ORDER_TONE: Record<string, "success" | "error" | "gold" | "info" | "neutral"> = {
   pending_approval: "gold",
@@ -98,7 +99,7 @@ const BUCKET_TONE: Record<string, "success" | "neutral" | "warning" | "error"> =
   "60+": "error",
 };
 
-export function RepaymentsTab({ data }: TabProps) {
+export function RepaymentsTab({ data, role }: TabProps) {
   const { summary, schedules, history } = data.repayments;
   if (schedules.length === 0) {
     return <p className="text-sm text-text-muted">No repayments — this customer has no financed orders yet.</p>;
@@ -141,6 +142,8 @@ export function RepaymentsTab({ data }: TabProps) {
           ))}
         </DataTable>
       </Section>
+
+      <AutoDebitSection customerId={data.customer.id} role={role} />
 
       <Section title="Payment history" description="Every payment recorded against this customer's instalments.">
         {history.length === 0 ? (

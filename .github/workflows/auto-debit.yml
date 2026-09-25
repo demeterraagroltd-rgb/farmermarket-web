@@ -1,0 +1,39 @@
+name: Auto-debit collection
+
+# Takes the installments that have fallen due from customers who authorised
+# automatic repayment. Safe to run often: a pass only debits an installment that
+# is due, has no debit already on its way, and hasn't hit its retry wait (one
+# attempt a day, four at most) — and it does NOTHING at all unless the API has
+# AUTO_DEBIT_ENABLED=true and a live Mono payments key. Runs in banking hours.
+#
+# Setup: reuses the same two repo secrets as the other scheduled jobs —
+#   COLLECTIONS_API_URL     e.g. https://farmermarket-api-nsjd.onrender.com
+#   COLLECTIONS_CRON_SECRET the same value set on the API's env
+on:
+  schedule:
+    - cron: "0 7,10,13,16 * * *" # 08:00, 11:00, 14:00, 17:00 WAT
+  workflow_dispatch: {} # allow a manual run from the Actions tab
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /v1/direct-debit/collect-cron
+        env:
+          API_URL: ${{ secrets.COLLECTIONS_API_URL }}
+          CRON_SECRET: ${{ secrets.COLLECTIONS_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "COLLECTIONS_API_URL / COLLECTIONS_CRON_SECRET repo secrets are not set." >&2
+            exit 1
+          fi
+          # Render free tier can be cold. NOT retried on a slow response: the API
+          # records every debit it sends before sending it, so a second call
+          # while the first is still running is harmless, but there's nothing
+          # to gain from one either — the next scheduled run picks up the rest.
+          curl -fsS --max-time 300 -X POST "$API_URL/v1/direct-debit/collect-cron" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "content-type: application/json" -d '{}'
+          echo
+          echo "auto-debit collection pass ok"

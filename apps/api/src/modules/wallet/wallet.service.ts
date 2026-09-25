@@ -1,8 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { desc, eq } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { koboToNaira, nairaToKobo } from "@farmermarket/core";
 import {
   creditProfiles,
+  debitAttempts,
   orders,
   repaymentSchedules,
   repayments,
@@ -16,6 +17,17 @@ import { AuthService } from "../auth/auth.service";
 import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
 import type { PayRepaymentInput } from "./dto/pay-repayment.dto";
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export interface RepaymentReceipt {
+  repaymentId: string;
+  userId: string;
+  amountKobo: bigint;
+  installmentNumber: number;
+  totalInstallments: number;
+  fullyPaid: boolean;
+}
 
 @Injectable()
 export class WalletService {
@@ -169,64 +181,94 @@ export class WalletService {
   }
 
   private async _recordRepayment(scheduleId: string, amountNaira: number, expectedUserId?: string) {
+    const amountKobo = nairaToKobo(amountNaira);
     const receipt = await this.db.transaction(async (tx) => {
-      const [schedule] = await tx
-        .select()
-        .from(repaymentSchedules)
-        .where(eq(repaymentSchedules.id, scheduleId))
+      // A debit already on its way to the customer's bank will credit this
+      // installment when it lands; paying it by hand meanwhile would collect twice.
+      const inFlight = await tx
+        .select({ id: debitAttempts.id })
+        .from(debitAttempts)
+        .where(and(eq(debitAttempts.repaymentScheduleId, scheduleId), inArray(debitAttempts.status, ["initiated", "processing"])))
         .limit(1);
-      if (!schedule || (expectedUserId && schedule.userId !== expectedUserId)) {
-        throw new NotFoundException("Repayment schedule not found");
+      if (inFlight.length > 0) {
+        throw new ConflictException("An automatic debit for this installment is in progress — please wait for it to complete.");
       }
-      if (schedule.isPaid) throw new BadRequestException("This installment is already paid");
-      const userId = schedule.userId;
-
-      const amountKobo = nairaToKobo(amountNaira);
-      const newPaidKobo = schedule.amountPaidKobo + amountKobo;
-      if (newPaidKobo > schedule.amountKobo) {
-        throw new BadRequestException("Amount exceeds what's owed on this installment");
-      }
-
-      const [repayment] = await tx
-        .insert(repayments)
-        .values({ repaymentScheduleId: scheduleId, amountKobo })
-        .returning();
-
-      await tx
-        .update(repaymentSchedules)
-        .set({ amountPaidKobo: newPaidKobo, isPaid: newPaidKobo === schedule.amountKobo })
-        .where(eq(repaymentSchedules.id, scheduleId));
-
-      const [profile] = await tx.select().from(creditProfiles).where(eq(creditProfiles.userId, userId)).limit(1);
-      const usedKobo = profile?.usedCreditKobo ?? 0n;
-      // used_credit_kobo has a CHECK (>= 0) — a repayment can't push it
-      // negative, but floor here too rather than letting the DB constraint
-      // be the only thing standing between a bug and a 500.
-      const newUsedKobo = usedKobo - amountKobo < 0n ? 0n : usedKobo - amountKobo;
-
-      await tx
-        .update(creditProfiles)
-        .set({ usedCreditKobo: newUsedKobo, updatedAt: new Date() })
-        .where(eq(creditProfiles.userId, userId));
-
-      // A repayment reverses part of the receivable: cash comes in, the
-      // amount owed goes down. Same two accounts as order placement,
-      // opposite direction.
-      await this.ledger.post(tx, repayment.id, [
-        { accountName: "Cash", accountType: "asset", direction: "D", amountKobo, repaymentId: repayment.id },
-        { accountName: "Loans Receivable", accountType: "asset", direction: "C", amountKobo, repaymentId: repayment.id },
-      ]);
-
-      return {
-        userId,
-        amountKobo,
-        installmentNumber: schedule.installmentNumber,
-        totalInstallments: schedule.totalInstallments,
-        fullyPaid: newPaidKobo === schedule.amountKobo,
-      };
+      return this.applyRepaymentTx(tx, scheduleId, amountKobo, expectedUserId);
     });
+    await this.sendReceipt(receipt);
+    return { success: true };
+  }
 
-    // Receipt email — fire-and-forget, never blocks the repayment.
+  /**
+   * Records money received against one installment, inside the caller's
+   * transaction: the repayment row, the schedule, the customer's used credit and
+   * the ledger legs, all or nothing. The schedule row is locked for the duration,
+   * so two payments arriving together (a manual one and an auto-debit, or a
+   * webhook delivered twice) are applied one after the other against the true
+   * balance — never both against the same stale one.
+   *
+   * Send the receipt with {@link sendReceipt} *after* the transaction commits.
+   */
+  async applyRepaymentTx(tx: Tx, scheduleId: string, amountKobo: bigint, expectedUserId?: string): Promise<RepaymentReceipt> {
+    const [schedule] = await tx
+      .select()
+      .from(repaymentSchedules)
+      .where(eq(repaymentSchedules.id, scheduleId))
+      .limit(1)
+      .for("update");
+    if (!schedule || (expectedUserId && schedule.userId !== expectedUserId)) {
+      throw new NotFoundException("Repayment schedule not found");
+    }
+    if (schedule.isPaid) throw new BadRequestException("This installment is already paid");
+    const userId = schedule.userId;
+
+    const newPaidKobo = schedule.amountPaidKobo + amountKobo;
+    if (newPaidKobo > schedule.amountKobo) {
+      throw new BadRequestException("Amount exceeds what's owed on this installment");
+    }
+
+    const [repayment] = await tx
+      .insert(repayments)
+      .values({ repaymentScheduleId: scheduleId, amountKobo })
+      .returning();
+
+    await tx
+      .update(repaymentSchedules)
+      .set({ amountPaidKobo: newPaidKobo, isPaid: newPaidKobo === schedule.amountKobo })
+      .where(eq(repaymentSchedules.id, scheduleId));
+
+    const [profile] = await tx.select().from(creditProfiles).where(eq(creditProfiles.userId, userId)).limit(1);
+    const usedKobo = profile?.usedCreditKobo ?? 0n;
+    // used_credit_kobo has a CHECK (>= 0) — a repayment can't push it
+    // negative, but floor here too rather than letting the DB constraint
+    // be the only thing standing between a bug and a 500.
+    const newUsedKobo = usedKobo - amountKobo < 0n ? 0n : usedKobo - amountKobo;
+
+    await tx
+      .update(creditProfiles)
+      .set({ usedCreditKobo: newUsedKobo, updatedAt: new Date() })
+      .where(eq(creditProfiles.userId, userId));
+
+    // A repayment reverses part of the receivable: cash comes in, the
+    // amount owed goes down. Same two accounts as order placement,
+    // opposite direction.
+    await this.ledger.post(tx, repayment.id, [
+      { accountName: "Cash", accountType: "asset", direction: "D", amountKobo, repaymentId: repayment.id },
+      { accountName: "Loans Receivable", accountType: "asset", direction: "C", amountKobo, repaymentId: repayment.id },
+    ]);
+
+    return {
+      repaymentId: repayment.id,
+      userId,
+      amountKobo,
+      installmentNumber: schedule.installmentNumber,
+      totalInstallments: schedule.totalInstallments,
+      fullyPaid: newPaidKobo === schedule.amountKobo,
+    };
+  }
+
+  /** Receipt email — fire-and-forget, never blocks or fails a repayment. */
+  async sendReceipt(receipt: RepaymentReceipt): Promise<void> {
     const [buyer] = await this.db
       .select({ fullName: users.fullName, email: users.email })
       .from(users)
@@ -243,8 +285,6 @@ export class WalletService {
         }),
       });
     }
-
-    return { success: true };
   }
 
   // ── Staff / dashboard: Order Review workspace ────────────────────────────

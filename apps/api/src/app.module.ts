@@ -15,6 +15,8 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { InboxModule } from "./modules/inbox/inbox.module";
 import { LocationsModule } from "./modules/locations/locations.module";
+import { DirectDebitModule } from "./modules/direct-debit/direct-debit.module";
+import { MonoPaymentsModule } from "./modules/integrations/mono-payments/mono-payments.module";
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { LocationsModule } from "./modules/locations/locations.module";
     ReportsModule,
     InboxModule,
     LocationsModule,
+    MonoPaymentsModule,
+    DirectDebitModule,
   ],
 })
 export class AppModule {}

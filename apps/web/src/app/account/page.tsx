@@ -23,6 +23,7 @@ import {
 } from "../../lib/customer";
 import { MonoConnectButton, type BankAnalysis } from "../../components/site/MonoConnectButton";
 import { BvnVerifyCard, type IdentityCheck } from "../../components/site/BvnVerifyCard";
+import { AutoDebitCard } from "../../components/site/AutoDebitCard";
 
 interface CreditProfile {
   // Deliberately just the tier: the limit, what's used and what's left are
@@ -360,7 +361,10 @@ export default function AccountPage() {
                 active === "orders" ? (
                   <OrdersPanel orders={orders} error={error} />
                 ) : (
-                  <RepaymentsPanel repayments={repayments} />
+                  <>
+                    <AutoDebitCard hasTxnPin={session.hasTxnPin} />
+                    <RepaymentsPanel repayments={repayments} />
+                  </>
                 )
               }
             </Tabs>

@@ -690,6 +690,38 @@ export interface SpendingAnalysis {
   unusualTransactions: UnusualTransaction[];
 }
 
+// ── Automatic repayment (auto-debit) ───────────────────────────────────────
+// Mirrors apps/api/src/modules/direct-debit/direct-debit.controller.ts (staff view, kobo).
+
+export interface AutoDebitStaffView {
+  available: boolean;
+  mandate: {
+    id: string;
+    status: "awaiting_authorisation" | "approved" | "active" | "paused" | "cancelled" | "rejected" | "expired";
+    amountKobo: number;
+    collectedKobo: number;
+    startDate: string;
+    endDate: string;
+    statusReason: string | null;
+    readyAt: string | null;
+    createdAt: string;
+  } | null;
+  attempts: Array<{
+    id: string;
+    status: "initiated" | "processing" | "successful" | "failed" | "needs_review";
+    amountKobo: number;
+    attemptNumber: number;
+    responseCode: string | null;
+    failureReason: string | null;
+    trigger: string;
+    createdAt: string;
+    completedAt: string | null;
+    installmentNumber: number;
+    totalInstallments: number;
+    dueDate: string;
+  }>;
+}
+
 export const TREND_LABEL: Record<NonNullable<CategorySignal["trend"]>, string> = {
   increasing: "Increasing",
   decreasing: "Decreasing",

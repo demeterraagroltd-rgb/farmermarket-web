@@ -90,6 +90,18 @@ services:
         sync: false
       - key: MONO_WEBHOOK_SECRET
         sync: false
+      # Auto-debit (Mono Direct Debit). AUTO_DEBIT_ENABLED is the master switch;
+      # unset (the default) means OFF. Set it to "true" in the dashboard only once
+      # MONO_PAYMENTS_SECRET_KEY is a live key and the Mono dashboard webhook
+      # points at <api>/v1/webhooks/mono-payments. With it "true" and no live key
+      # the collection job refuses to run. (sync: false so a blueprint sync never
+      # flips it either way.)
+      - key: AUTO_DEBIT_ENABLED
+        sync: false
+      - key: MONO_PAYMENTS_SECRET_KEY
+        sync: false
+      - key: MONO_PAYMENTS_WEBHOOK_SECRET
+        sync: false
       # Mono Lookup — BVN/NIN identity verification. A *separate* Mono app
       # from Connect with its own secret key, and never borrowed from
       # MONO_SECRET_KEY: unset ⇒ the fake client, which stamps every result

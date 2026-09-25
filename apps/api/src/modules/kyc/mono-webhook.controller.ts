@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { webhookEvents, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import { KycService } from "./kyc.service";
+import { DirectDebitService } from "../direct-debit/direct-debit.service";
 
 // Mono posts here when a linked account's data changes / is ready. Auth is
 // the `mono-webhook-secret` header compared against MONO_WEBHOOK_SECRET
@@ -27,6 +28,7 @@ export class MonoWebhookController {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly kyc: KycService,
+    private readonly directDebit: DirectDebitService,
   ) {}
 
   @Post()
@@ -64,6 +66,20 @@ export class MonoWebhookController {
     } catch {
       this.log.log(`duplicate webhook ${eventId} — ignoring`);
       return { ok: true, duplicate: true };
+    }
+
+    // Direct-debit (mandate / debit) events share this URL when Mono is pointed
+    // at just one. Awaited, and un-recorded on failure, so a 500 makes Mono
+    // redeliver — a debit confirmation must never be silently dropped.
+    if (event.startsWith("events.mandate")) {
+      try {
+        const result = await this.directDebit.processEvent(event, body?.data as Record<string, unknown> | undefined);
+        await this.db.update(webhookEvents).set({ processedAt: new Date() }).where(eq(webhookEvents.eventId, eventId));
+        return { ok: true, result };
+      } catch (e) {
+        await this.db.delete(webhookEvents).where(eq(webhookEvents.eventId, eventId));
+        throw e;
+      }
     }
 
     if (event === "mono.events.account_connected" || event === "mono.events.account_updated") {
