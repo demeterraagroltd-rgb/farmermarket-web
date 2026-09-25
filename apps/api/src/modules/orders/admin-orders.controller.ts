@@ -71,9 +71,10 @@ export class AdminOrdersController {
   @Roles("super_admin", "admin")
   updateStatus(
     @Param("id") id: string,
+    @CurrentStaff() staff: AuthenticatedStaff,
     @Body(new ZodValidationPipe(updateStatusSchema))
     body: { status: "preparing" | "on_the_way" | "delivered" | "cancelled" },
   ) {
-    return this.ordersService.updateStatus(id, body.status);
+    return this.ordersService.updateStatus(id, body.status, staff.staffId);
   }
 }

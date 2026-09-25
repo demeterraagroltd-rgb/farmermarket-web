@@ -31,7 +31,8 @@ const productStatus = z.enum(["draft", "published", "archived"]);
 // existing FoodItem model; the admin form still deals in ids, since that's
 // what's actually referential in the schema. The Flutter `FoodItem` also
 // carries `tags` / `isPopular` / `discountPrice`, so the create form must be
-// able to set them (it couldn't before).
+// able to set them (it couldn't before). Stock isn't set here — it's
+// received into lots on the Inventory page (modules/inventory).
 export const createProductSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -43,7 +44,6 @@ export const createProductSchema = z.object({
   unit: z.string().min(1),
   tags: z.array(z.string()).optional(),
   isPopular: z.boolean().optional(),
-  stockQuantity: z.number().int().min(0).default(0),
   sortOrder: z.number().int().optional(),
   status: productStatus.optional(),
 });
@@ -59,7 +59,6 @@ export class CreateProductDto implements CreateProductInput {
   @ApiProperty() unit!: string;
   @ApiPropertyOptional({ type: [String] }) tags?: string[];
   @ApiPropertyOptional() isPopular?: boolean;
-  @ApiProperty() stockQuantity!: number;
   @ApiPropertyOptional() sortOrder?: number;
   @ApiPropertyOptional({ enum: ["draft", "published", "archived"] })
   status?: "draft" | "published" | "archived";
@@ -79,7 +78,6 @@ export class UpdateProductDto implements Partial<CreateProductInput> {
   @ApiPropertyOptional() unit?: string;
   @ApiPropertyOptional({ type: [String] }) tags?: string[];
   @ApiPropertyOptional() isPopular?: boolean;
-  @ApiPropertyOptional() stockQuantity?: number;
   @ApiPropertyOptional() sortOrder?: number;
   @ApiPropertyOptional({ enum: ["draft", "published", "archived"] })
   status?: "draft" | "published" | "archived";

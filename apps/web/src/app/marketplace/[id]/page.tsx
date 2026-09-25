@@ -7,7 +7,7 @@ import { SiteHeader } from "../../../components/site/SiteHeader";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
 import { formatNairaAmount } from "../../../lib/format";
-import { effectivePrice, fetchProduct, type Product } from "../../../lib/catalog";
+import { effectivePrice, fetchProduct, LOW_STOCK_HINT, type Product } from "../../../lib/catalog";
 import { addToCart } from "../../../lib/cart";
 
 // Mirrors the phone app's FoodItemScreen — quantity stepper, running total,
@@ -134,13 +134,19 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       <span className="w-6 text-center font-semibold tabular-nums text-text-dark">{quantity}</span>
                       <button
                         type="button"
-                        onClick={() => setQuantity((q) => q + 1)}
-                        className="flex h-8 w-8 items-center justify-center text-lg font-semibold text-text-medium hover:text-text-dark"
+                        onClick={() => setQuantity((q) => Math.min(product.availableQuantity, q + 1))}
+                        disabled={quantity >= product.availableQuantity}
+                        className="flex h-8 w-8 items-center justify-center text-lg font-semibold text-text-medium hover:text-text-dark disabled:opacity-30"
                         aria-label="Increase quantity"
                       >
                         +
                       </button>
                     </div>
+                    {product.availableQuantity <= LOW_STOCK_HINT && (
+                      <span className="text-sm font-semibold text-warning">
+                        Only {product.availableQuantity} left
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">

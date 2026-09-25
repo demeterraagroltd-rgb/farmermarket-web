@@ -44,7 +44,12 @@ export const products = pgTable(
     isPopular: boolean("is_popular").notNull().default(false),
     status: text("status").notNull().default("draft"), // 'draft' | 'published' | 'archived'
     sku: text("sku").unique(),
+    // On hand in the warehouse. Owned by InventoryService (see inventory.ts) —
+    // nothing else writes it; admins change it by receiving or adjusting lots.
     stockQuantity: integer("stock_quantity").notNull().default(0),
+    // Held for submitted orders that haven't been dispatched yet. Available
+    // to buy = stock_quantity − stock_reserved.
+    stockReserved: integer("stock_reserved").notNull().default(0),
     lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
     costPriceKobo: bigint("cost_price_kobo", { mode: "bigint" }),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -55,6 +60,10 @@ export const products = pgTable(
   },
   (table) => [
     check("price_positive", sql`${table.priceKobo} > 0`),
+    check(
+      "stock_reserved_in_range",
+      sql`${table.stockReserved} >= 0 AND ${table.stockReserved} <= ${table.stockQuantity}`,
+    ),
     check(
       "discount_below_price",
       sql`${table.discountPriceKobo} IS NULL OR ${table.discountPriceKobo} < ${table.priceKobo}`,

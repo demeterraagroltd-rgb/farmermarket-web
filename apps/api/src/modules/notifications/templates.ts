@@ -1,7 +1,7 @@
 // Plain, dependency-free templated strings. Keep them short and literal —
 // this isn't a marketing surface.
 
-import { customerLinks } from "./links";
+import { customerLinks, staffLinks } from "./links";
 
 function wrap(body: string): string {
   return `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:15px;color:#0D2119;line-height:1.6">
@@ -205,4 +205,47 @@ export const emails = {
         cta(customerLinks.order(opts.orderId), "View this order"),
     ),
   }),
+
+  // ── Staff: daily inventory digest ─────────────────────────────────────
+  inventoryDigest: (opts: {
+    releasedOrders: string[];
+    lowStock: { name: string; available: number; threshold: number }[];
+    expiringLots: { lotCode: string; productName: string; remaining: number; expiryDate: string }[];
+  }) => {
+    const list = (items: string[]) =>
+      `<ul style="padding-left:18px;margin:4px 0 16px">${items.map((i) => `<li>${i}</li>`).join("")}</ul>`;
+    const parts: string[] = [];
+    if (opts.lowStock.length) {
+      parts.push(
+        `<p><strong>Low stock (${opts.lowStock.length})</strong></p>` +
+          list(opts.lowStock.map((p) => `${esc(p.name)} — ${p.available} available (alert at ${p.threshold})`)),
+      );
+    }
+    if (opts.expiringLots.length) {
+      parts.push(
+        `<p><strong>Expiring within 30 days (${opts.expiringLots.length})</strong></p>` +
+          list(
+            opts.expiringLots.map(
+              (l) => `${esc(l.productName)} · lot ${esc(l.lotCode)} — ${l.remaining} left, expires ${esc(l.expiryDate)}`,
+            ),
+          ),
+      );
+    }
+    if (opts.releasedOrders.length) {
+      parts.push(
+        `<p><strong>Stock released from ${opts.releasedOrders.length} order(s) left pending too long</strong></p>` +
+          `<p>Approving one of these now takes the stock again, if it's still there.</p>`,
+      );
+    }
+    return {
+      subject: `Inventory: ${[
+        opts.lowStock.length && `${opts.lowStock.length} low`,
+        opts.expiringLots.length && `${opts.expiringLots.length} expiring`,
+        opts.releasedOrders.length && `${opts.releasedOrders.length} released`,
+      ]
+        .filter(Boolean)
+        .join(", ")}`,
+      html: wrap(parts.join("") + cta(staffLinks.inventory(), "Open inventory")),
+    };
+  },
 };

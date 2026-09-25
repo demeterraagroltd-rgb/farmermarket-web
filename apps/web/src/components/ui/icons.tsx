@@ -215,3 +215,14 @@ export function MapPinIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+// Shelving: the warehouse / inventory nav entry.
+export function ShelvesIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M3 3v14M17 3v14" />
+      <path d="M3 8h14M3 13h14" />
+      <path d="M6 8V5.5h3V8M11 13v-2.5h3V13M6 13v-1.5h2V13" />
+    </svg>
+  );
+}

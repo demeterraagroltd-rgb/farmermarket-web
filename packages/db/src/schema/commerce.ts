@@ -66,6 +66,11 @@ export const orders = pgTable(
     approvedByStaffId: uuid("approved_by_staff_id").references(() => staff.id),
     deliverySlot: text("delivery_slot"), // human string shown to the buyer, e.g. "Tue 3 Sep, 9am–12pm"
     rejectionReason: text("rejection_reason"),
+    // Where this order's goods are: 'reserved' (held at submit) → 'dispatched'
+    // (left the warehouse) or 'released' (rejected/cancelled/expired before
+    // dispatch); a dispatched order that's cancelled ends 'returned'. Null on
+    // orders placed before inventory tracking — those never touch stock.
+    stockState: text("stock_state"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

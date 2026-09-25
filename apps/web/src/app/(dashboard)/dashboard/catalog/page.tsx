@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
 import { formatNaira } from "../../../../lib/format";
@@ -28,6 +29,7 @@ interface Product {
   brandId: string;
   status: string;
   stockQuantity: number;
+  stockReserved: number;
   isPopular: boolean;
   tags: string[];
   unit: string;
@@ -50,7 +52,6 @@ const EMPTY_PRODUCT = {
   categoryId: "",
   brandId: "",
   unit: "",
-  stockQuantity: "0",
   tags: "",
   isPopular: false,
   status: "draft",
@@ -89,7 +90,9 @@ function ProductFields({
         ))}
       </Select>
       <Input label="Unit" placeholder="e.g. 50kg bag" value={form.unit} onChange={(e) => set((f) => ({ ...f, unit: e.target.value }))} required />
-      <Input type="number" label="Stock" value={form.stockQuantity} onChange={(e) => set((f) => ({ ...f, stockQuantity: e.target.value }))} min={0} />
+      <p className="self-end pb-2 text-xs text-text-muted">
+        Stock is added on the <Link href="/dashboard/inventory" className="font-semibold text-primary hover:underline">Inventory</Link> page. A product only shows in the app once it has stock.
+      </p>
       <Input label="Tags (comma-separated)" placeholder="rice, big bull, 50kg" value={form.tags} onChange={(e) => set((f) => ({ ...f, tags: e.target.value }))} />
       <Select label="Status" value={form.status} onChange={(e) => set((f) => ({ ...f, status: e.target.value }))}>
         <option value="draft">Draft</option>
@@ -206,7 +209,6 @@ export default function CatalogPage() {
       categoryId: form.categoryId,
       brandId: form.brandId,
       unit: form.unit,
-      stockQuantity: Number(form.stockQuantity),
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       isPopular: form.isPopular,
       status: form.status,
@@ -271,7 +273,6 @@ export default function CatalogPage() {
       categoryId: p.categoryId,
       brandId: p.brandId,
       unit: p.unit,
-      stockQuantity: String(p.stockQuantity),
       tags: (p.tags ?? []).join(", "),
       isPopular: p.isPopular,
       status: p.status,
@@ -443,7 +444,13 @@ export default function CatalogPage() {
                 </p>
                 <div className="mt-1 flex items-center justify-between">
                   <span className="text-sm font-bold tabular-nums text-primary">{formatNaira(p.priceKobo)}</span>
-                  <span className="text-xs tabular-nums text-text-muted">{p.stockQuantity} in stock</span>
+                  <Link
+                    href={`/dashboard/inventory/${p.id}`}
+                    className="text-xs tabular-nums text-text-muted hover:text-primary hover:underline"
+                    title="Stock is received and adjusted on the Inventory page"
+                  >
+                    {p.stockQuantity - p.stockReserved} available
+                  </Link>
                 </div>
                 <div className="mt-3 flex gap-2">
                   <button

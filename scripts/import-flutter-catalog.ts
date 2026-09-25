@@ -29,6 +29,8 @@ import {
   categories,
   config,
   products,
+  stockLots,
+  stockMovements,
 } from "@farmermarket/db";
 
 const ASSETS_DIR =
@@ -184,6 +186,7 @@ async function main() {
   };
 
   // 4. Products
+  const OPENING_STOCK = 100;
   console.log("Upserting products…");
   let sortOrder = 0;
   for (const p of PRODUCT_DATA) {
@@ -198,7 +201,6 @@ async function main() {
       tags: p.tags,
       isPopular: p.isPopular,
       isAvailable: true,
-      stockQuantity: 100,
       status: "published" as const,
       sortOrder: sortOrder++,
       publishedAt: new Date(),
@@ -206,9 +208,29 @@ async function main() {
     };
     const [existing] = await db.select().from(products).where(eq(products.name, p.name)).limit(1);
     if (existing) {
+      // Stock is left alone on a re-run — it's owned by the Inventory page now.
       await db.update(products).set(values).where(eq(products.id, existing.id));
     } else {
-      await db.insert(products).values(values);
+      // A new product starts with 100 as an opening-balance lot, recorded the
+      // same way InventoryService.receive would, so lots = on hand from day one.
+      const [created] = await db.insert(products).values({ ...values, stockQuantity: OPENING_STOCK }).returning();
+      const [lot] = await db
+        .insert(stockLots)
+        .values({
+          productId: created.id,
+          lotCode: `OPEN-${created.id.slice(0, 8).toUpperCase()}`,
+          quantityReceived: OPENING_STOCK,
+          quantityRemaining: OPENING_STOCK,
+          note: "Opening balance (catalog import)",
+        })
+        .returning();
+      await db.insert(stockMovements).values({
+        productId: created.id,
+        lotId: lot.id,
+        type: "receive",
+        onHandDelta: OPENING_STOCK,
+        note: "Opening balance (catalog import)",
+      });
     }
   }
 

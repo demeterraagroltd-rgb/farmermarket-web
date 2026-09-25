@@ -201,6 +201,14 @@ export default function OrdersPage() {
                     ))}
                   </>
                 )}
+                {["confirmed", "preparing", "on_the_way"].includes(o.status) && (
+                  <Link
+                    href={`/dashboard/inventory/pick-list/${o.id}`}
+                    className="ml-auto rounded-[var(--radius-sm)] border border-dark-border/60 px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:bg-surface"
+                  >
+                    Pick list
+                  </Link>
+                )}
               </div>
             </Card>
           ))}

@@ -3,6 +3,7 @@ import { AuthModule } from "../auth/auth.module";
 import { LedgerModule } from "../ledger/ledger.module";
 import { KycModule } from "../kyc/kyc.module";
 import { WalletModule } from "../wallet/wallet.module";
+import { InventoryModule } from "../inventory/inventory.module";
 import { OrdersController } from "./orders.controller";
 import { AdminOrdersController } from "./admin-orders.controller";
 import { OrdersService } from "./orders.service";
@@ -11,7 +12,8 @@ import { OrderReviewService } from "./order-review.service";
 @Module({
   // AuthModule: JwtService for guards; KycModule: verified gate + applicant
   // data; WalletModule: credit position — both for the Order Review workspace.
-  imports: [AuthModule, LedgerModule, KycModule, WalletModule],
+  // InventoryModule: stock is held, dispatched and released with the order.
+  imports: [AuthModule, LedgerModule, KycModule, WalletModule, InventoryModule],
   controllers: [OrdersController, AdminOrdersController],
   providers: [OrdersService, OrderReviewService],
   // The Customer 360 page reads a customer's orders through this.

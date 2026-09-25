@@ -31,3 +31,9 @@ export const customerLinks = {
   /** Account page with the Repayments tab open. */
   repayments: () => page("/account?tab=repayments"),
 };
+
+// Staff-facing: the dashboard lives on the same web deployment.
+export const staffLinks = {
+  /** Inventory table — stock levels, lots, receive and adjust. */
+  inventory: () => page("/dashboard/inventory"),
+};

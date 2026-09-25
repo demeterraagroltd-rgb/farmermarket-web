@@ -19,6 +19,7 @@ import { LedgerService } from "../ledger/ledger.service";
 import { AuthService } from "../auth/auth.service";
 import { KycService } from "../kyc/kyc.service";
 import { EmailService } from "../notifications/email.service";
+import { InventoryService } from "../inventory/inventory.service";
 import { emails } from "../notifications/templates";
 import type { CreateOrderInput } from "./dto/create-order.dto";
 
@@ -43,6 +44,7 @@ export class OrdersService {
     private readonly authService: AuthService,
     private readonly kyc: KycService,
     private readonly email: EmailService,
+    private readonly inventory: InventoryService,
   ) {}
 
   private async notifyBuyer(userId: string, build: (name: string, email: string | null) => { subject: string; html: string }) {
@@ -136,20 +138,40 @@ export class OrdersService {
   // Post-approval lifecycle only (preparing → on_the_way → delivered,
   // cancelled). Entering `confirmed`/`rejected` goes through approve()/reject();
   // `pending_approval` is only ever set at creation.
-  async updateStatus(orderId: string, status: (typeof orders.status.enumValues)[number]) {
+  //
+  // Stock follows the order: the first move out of the warehouse (preparing,
+  // or straight to on_the_way/delivered) dispatches the held goods FIFO;
+  // cancelling releases the hold, or returns the goods if they'd left.
+  async updateStatus(orderId: string, status: (typeof orders.status.enumValues)[number], staffId: string | null = null) {
     if (["pending_approval", "confirmed", "rejected"].includes(status)) {
       throw new BadRequestException("Use the approve / reject actions for this transition");
     }
-    const [row] = await this.db
-      .update(orders)
-      .set({
-        status,
-        deliveredAt: status === "delivered" ? new Date() : undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(orders.id, orderId))
-      .returning();
-    if (!row) throw new NotFoundException("Order not found");
+    const row = await this.db.transaction(async (tx) => {
+      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update").limit(1);
+      if (!order) throw new NotFoundException("Order not found");
+
+      if (status === "cancelled") {
+        await this.inventory.releaseForOrder(tx, order, staffId, "Order cancelled");
+        await this.inventory.returnForOrder(tx, order, staffId);
+      } else if (order.stockState === "released" || order.stockState === "returned") {
+        throw new BadRequestException(
+          "This order's stock was already put back on the shelf — it can't move forward again. Ask the buyer to place a new order.",
+        );
+      } else {
+        await this.inventory.dispatchForOrder(tx, order, staffId);
+      }
+
+      const [updated] = await tx
+        .update(orders)
+        .set({
+          status,
+          deliveredAt: status === "delivered" ? new Date() : undefined,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId))
+        .returning();
+      return updated;
+    });
     return this.attachItems(row);
   }
 
@@ -208,6 +230,9 @@ export class OrdersService {
         })
         .returning();
 
+      // Holds the stock or throws 409 OUT_OF_STOCK, rolling the order back.
+      await this.inventory.reserveForOrder(tx, order.id, input.items);
+
       const items = await tx
         .insert(orderItems)
         .values(
@@ -252,12 +277,15 @@ export class OrdersService {
    * Returns the buyer id + slot so the caller can send the "approved" email.
    */
   async approve(orderId: string, staffId: string, deliverySlot?: string) {
-    return this.db.transaction(async (tx) => {
+    const { order, updated } = await this.db.transaction(async (tx) => {
       const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
       if (!order) throw new NotFoundException("Order not found");
       if (order.status !== "pending_approval") {
         throw new BadRequestException(`Order is already ${order.status}`);
       }
+      // Its hold may have lapsed while it waited (the daily sweep releases
+      // them) — take the stock again, or refuse with OUT_OF_STOCK.
+      await this.inventory.reReserveForOrder(tx, order);
       const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
       if (!plan) throw new BadRequestException("Order's plan no longer exists");
 
@@ -318,32 +346,40 @@ export class OrdersService {
         })
         .where(eq(orders.id, orderId))
         .returning();
-
-      const response = await this.attachItems(updated);
-      await this.notifyBuyer(order.userId, (name) =>
-        emails.orderApproved(name, {
-          orderId,
-          total: koboToNaira(order.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
-          deliverySlot: updated.deliverySlot,
-          pickupCenter: [order.pickupCenterName, order.pickupCenterAddress].filter(Boolean).join(", "),
-          pickupDate: shortDate(order.pickupDate),
-        }),
-      );
-      return { ...response, userId: order.userId, deliverySlot: updated.deliverySlot };
+      return { order, updated };
     });
+
+    // After commit, not inside the transaction: the buyer is only told once
+    // the approval has actually stuck, and these reads don't queue behind the
+    // transaction's own connection.
+    const response = await this.attachItems(updated);
+    await this.notifyBuyer(order.userId, (name) =>
+      emails.orderApproved(name, {
+        orderId,
+        total: koboToNaira(order.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
+        deliverySlot: updated.deliverySlot,
+        pickupCenter: [order.pickupCenterName, order.pickupCenterAddress].filter(Boolean).join(", "),
+        pickupDate: shortDate(order.pickupDate),
+      }),
+    );
+    return { ...response, userId: order.userId, deliverySlot: updated.deliverySlot };
   }
 
   async reject(orderId: string, staffId: string, reason: string) {
-    const [order] = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.status !== "pending_approval") {
-      throw new BadRequestException(`Order is already ${order.status}`);
-    }
-    const [updated] = await this.db
-      .update(orders)
-      .set({ status: "rejected", rejectionReason: reason, approvedByStaffId: staffId, updatedAt: new Date() })
-      .where(eq(orders.id, orderId))
-      .returning();
+    const { order, updated } = await this.db.transaction(async (tx) => {
+      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update").limit(1);
+      if (!order) throw new NotFoundException("Order not found");
+      if (order.status !== "pending_approval") {
+        throw new BadRequestException(`Order is already ${order.status}`);
+      }
+      await this.inventory.releaseForOrder(tx, order, staffId, "Order rejected");
+      const [updated] = await tx
+        .update(orders)
+        .set({ status: "rejected", rejectionReason: reason, approvedByStaffId: staffId, updatedAt: new Date() })
+        .where(eq(orders.id, orderId))
+        .returning();
+      return { order, updated };
+    });
     const response = await this.attachItems(updated);
     await this.notifyBuyer(order.userId, (name) => emails.orderRejected(name, { orderId, reason }));
     return { ...response, userId: order.userId };

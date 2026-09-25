@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { koboToNaira, nairaToKobo } from "@farmermarket/core";
 import { bnplPlans, banners, categories, brands, products, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
@@ -42,13 +42,22 @@ export class CatalogService {
   // columns. Rather than diverge the shape, this joins the names in and adds
   // the naira fields *alongside* the raw ones, so the web `/marketplace`
   // page (which reads `priceKobo`) keeps working unchanged.
+  //
+  // Nothing available (on hand − reserved) ⇒ not listed at all, so an app
+  // build that predates `availableQuantity` still can't offer it.
   async listPublishedProducts() {
     const rows = await this.db
       .select()
       .from(products)
       .innerJoin(categories, eq(products.categoryId, categories.id))
       .innerJoin(brands, eq(products.brandId, brands.id))
-      .where(and(eq(products.status, "published"), eq(products.isAvailable, true)))
+      .where(
+        and(
+          eq(products.status, "published"),
+          eq(products.isAvailable, true),
+          sql`${products.stockQuantity} - ${products.stockReserved} > 0`,
+        ),
+      )
       .orderBy(products.sortOrder);
 
     return rows.map((row) => ({
@@ -58,6 +67,7 @@ export class CatalogService {
         row.products.discountPriceKobo !== null
           ? koboToNaira(row.products.discountPriceKobo)
           : null,
+      availableQuantity: row.products.stockQuantity - row.products.stockReserved,
       category: row.categories.name,
       brand: row.brands.name,
       brandImagePath: row.brands.imagePath,
@@ -121,7 +131,6 @@ export class CatalogService {
       ...(input.unit !== undefined ? { unit: input.unit } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
       ...(input.isPopular !== undefined ? { isPopular: input.isPopular } : {}),
-      ...(input.stockQuantity !== undefined ? { stockQuantity: input.stockQuantity } : {}),
       ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
     };
@@ -143,7 +152,6 @@ export class CatalogService {
         unit: input.unit,
         tags: input.tags ?? [],
         isPopular: input.isPopular ?? false,
-        stockQuantity: input.stockQuantity,
         sortOrder: input.sortOrder ?? 0,
         status,
         publishedAt: status === "published" ? new Date() : undefined,

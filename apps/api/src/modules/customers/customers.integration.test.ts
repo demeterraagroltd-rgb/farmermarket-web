@@ -51,7 +51,7 @@ describe("Customer 360 (real Postgres)", () => {
     db = t.db;
     const kyc = new KycService(db, any, any, any, any, any, new MonoSyncService(db, any));
     const wallet = new WalletService(db, any, any, any);
-    const ordersSvc = new OrdersService(db, any, any, kyc, any);
+    const ordersSvc = new OrdersService(db, any, any, kyc, any, any);
     customers = new CustomersService(db);
     c360 = new Customer360Service(db, kyc, wallet, ordersSvc);
 

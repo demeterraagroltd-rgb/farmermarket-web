@@ -15,7 +15,12 @@ export interface Product {
   brand: string;
   isAvailable: boolean;
   stockQuantity: number;
+  /** On hand minus what's held for other orders — the most a buyer can add. */
+  availableQuantity: number;
 }
+
+/** Show "Only N left" at or below this many. */
+export const LOW_STOCK_HINT = 10;
 
 export interface Category {
   id: string;
