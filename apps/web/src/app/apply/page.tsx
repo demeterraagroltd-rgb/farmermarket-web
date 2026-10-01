@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -127,6 +128,10 @@ type DocState = Record<string, { id: string; status: string } | undefined>;
 const MAX_DOC_BYTES = 10 * 1024 * 1024;
 
 export default function ApplyPage() {
+  const router = useRouter();
+  const [restoring, setRestoring] = useState(true);
+  const [hasSavedBvn, setHasSavedBvn] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const [step, setStep] = useState(0); // 0 = Path; 1..TOTAL = counted steps
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [token, setToken] = useState<string | null>(null);
@@ -141,22 +146,84 @@ export default function ApplyPage() {
   const [resumable, setResumable] = useState<{ form: FormState; step: number; userId: string | null } | null>(null);
   const hydrated = useRef(false);
 
-  // On first load, look for a saved draft. If one exists we don't jump
-  // straight back in — a small banner offers Resume / Start over.
+  // Returning customers resume their server profile, even on another device.
   useEffect(() => {
-    try {
+    let cancelled = false;
+    async function restore() {
+      const session = getCustomerSession();
+      if (session) {
+        try {
+          const res = await customerFetch("/v1/kyc/me", session.token);
+          if (!res.ok) throw new Error(await readError(res));
+          const { profile: p, documents } = await res.json();
+          if (cancelled) return;
+          if (p.verificationStatus === "submitted" || p.verificationStatus === "verified") {
+            router.replace("/account");
+            return;
+          }
+          const address = p.residentialAddress ?? {};
+          const kin = p.nextOfKin ?? {};
+          setToken(session.token);
+          setUserId(session.userId);
+          setHasSavedBvn(!!p.hasBvn);
+          setForm({
+            ...EMPTY_FORM, employmentType: p.employmentType ?? "",
+            fullName: p.fullName ?? "", phone: p.phone ?? "", email: p.email ?? "",
+            dateOfBirth: p.dateOfBirth ?? "", gender: p.gender ?? "", maritalStatus: p.maritalStatus ?? "",
+            nin: p.nin ?? "", street: address.street ?? "", city: address.city ?? "",
+            addrState: address.state ?? "", lga: address.lga ?? "",
+            stateOfOrigin: p.stateOfOrigin ?? "", lgaOfOrigin: p.lgaOfOrigin ?? "",
+            employer: p.employer ?? "", jobTitle: p.jobTitle ?? "",
+            netMonthlySalaryNaira: p.netMonthlySalaryKobo == null ? "" : String(Number(p.netMonthlySalaryKobo) / 100),
+            requestedLimitNaira: p.requestedLimitKobo == null ? "" : String(Number(p.requestedLimitKobo) / 100),
+            salaryDay: p.salaryDay == null ? "" : String(p.salaryDay),
+            nokName: kin.name ?? "", nokRelationship: kin.relationship ?? "", nokPhone: kin.phone ?? "",
+          });
+          const savedDocs: DocState = {};
+          for (const doc of documents ?? []) {
+            if (!savedDocs[doc.kind]) savedDocs[doc.kind] = { id: doc.id, status: doc.status };
+          }
+          setDocs(savedDocs);
+          const personalComplete = p.dateOfBirth && p.hasBvn && p.nin;
+          const addressComplete = address.street && address.city && address.state && address.lga && p.stateOfOrigin && p.lgaOfOrigin;
+          const employmentComplete = p.employmentType && p.employer && p.jobTitle && Number(p.netMonthlySalaryKobo) > 0;
+          const documentsComplete = savedDocs.id_card && savedDocs.id_card.status !== "rejected";
+          setStep(!personalComplete ? 2 : !addressComplete ? 3 : !employmentComplete ? 4 : !documentsComplete ? 6 : 7);
+          if (p.verificationStatus === "unverified") {
+            try {
+              const raw = window.localStorage.getItem(DRAFT_KEY);
+              const draft = raw ? JSON.parse(raw) : null;
+              if (draft?.userId === session.userId && draft.form && Number.isInteger(draft.step) && draft.step >= 2 && draft.step <= TOTAL) {
+                setForm((saved) => ({ ...saved, ...draft.form, password: "", passwordConfirm: "", bvn: p.hasBvn ? "" : draft.form.bvn ?? "" }));
+                setStep(draft.step);
+              }
+            } catch { /* The server profile remains available if a draft is corrupt. */ }
+          }
+        } catch (err) {
+          if (!cancelled) setRestoreError(err instanceof Error ? err.message : "Could not restore your application.");
+        } finally {
+          if (!cancelled) setRestoring(false);
+        }
+        return;
+      }
+      try {
       const raw = window.localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       const d = JSON.parse(raw) as { form: FormState; step: number; userId: string | null };
       if (d?.form && typeof d.step === "number" && d.step > 0) setResumable(d);
-    } catch {
+      } catch {
       /* ignore a corrupt draft */
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
     }
-  }, []);
+    void restore();
+    return () => { cancelled = true; };
+  }, [router]);
 
   // Snapshot the draft on every change once the wizard is past the path screen.
   useEffect(() => {
-    if (!hydrated.current && step === 0) return;
+    if (restoring || (!hydrated.current && step === 0)) return;
     hydrated.current = true;
     if (submitted) return;
     try {
@@ -164,7 +231,7 @@ export default function ApplyPage() {
     } catch {
       /* storage full / disabled — non-fatal */
     }
-  }, [form, step, userId, submitted]);
+  }, [form, step, userId, submitted, restoring]);
 
   function clearDraft() {
     try {
@@ -269,13 +336,13 @@ export default function ApplyPage() {
         });
       } else if (step === 2) {
         if (!form.dateOfBirth) throw new Error("Your date of birth is required.");
-        if (!/^\d{11}$/.test(form.bvn)) throw new Error("Enter your 11-digit BVN.");
+        if (!hasSavedBvn && !/^\d{11}$/.test(form.bvn)) throw new Error("Enter your 11-digit BVN.");
         if (form.nin && !/^\d{11}$/.test(form.nin)) throw new Error("NIN must be 11 digits.");
         await patchProfile({
           dateOfBirth: form.dateOfBirth,
           gender: form.gender || undefined,
           maritalStatus: form.maritalStatus || undefined,
-          bvn: form.bvn,
+          bvn: form.bvn || undefined,
           nin: form.nin || undefined,
         });
       } else if (step === 3) {
@@ -341,7 +408,7 @@ export default function ApplyPage() {
 
   function goBack() {
     setStepError(null);
-    setStep((s) => Math.max(s - 1, 0));
+    setStep((s) => Math.max(s - 1, token ? 2 : 0));
   }
 
   async function uploadDoc(kind: string, file: File) {
@@ -439,6 +506,13 @@ export default function ApplyPage() {
         </main>
       </>
     );
+  }
+
+  if (restoring) {
+    return <><SiteHeader /><main className="min-h-screen bg-white px-6 py-16"><p className="text-center text-text-muted">Loading your application…</p></main></>;
+  }
+  if (restoreError) {
+    return <><SiteHeader /><main className="min-h-screen bg-white px-6 py-16"><p className="text-center text-error">{restoreError}</p><p className="mt-4 text-center"><Link href="/account">Return to your account</Link></p></main></>;
   }
 
   // ---- step 0: path choice -------------------------------------------
@@ -573,14 +647,14 @@ export default function ApplyPage() {
                       <option value="widowed">Widowed</option>
                     </Select>
                   </div>
-                  <Input
+                  {hasSavedBvn ? <p className="text-sm text-text-muted">Your BVN is already on file.</p> : <Input
                     label="BVN"
                     inputMode="numeric"
                     maxLength={11}
                     value={form.bvn}
                     onChange={(e) => update("bvn", e.target.value.replace(/\D/g, ""))}
                     required
-                  />
+                  />}
                   <Input
                     label="NIN"
                     inputMode="numeric"
@@ -634,7 +708,12 @@ export default function ApplyPage() {
                   <Input label="Job title" value={form.jobTitle} onChange={(e) => update("jobTitle", e.target.value)} required />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input type="number" label="Net monthly salary, ₦" value={form.netMonthlySalaryNaira} onChange={(e) => update("netMonthlySalaryNaira", e.target.value)} min={0} required />
-                    <Input type="number" label="Salary day of month (optional)" value={form.salaryDay} onChange={(e) => update("salaryDay", e.target.value)} min={1} max={31} />
+                    <Select label="Salary day of month (optional)" value={form.salaryDay} onChange={(e) => update("salaryDay", e.target.value)}>
+                      <option value="">Select a day</option>
+                      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                        <option key={day} value={String(day)}>{day}</option>
+                      ))}
+                    </Select>
                   </div>
                   <Input type="number" label="How much credit would you like? ₦ (optional)" value={form.requestedLimitNaira} onChange={(e) => update("requestedLimitNaira", e.target.value)} min={0} />
                 </>

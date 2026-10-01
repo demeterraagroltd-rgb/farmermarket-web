@@ -24,7 +24,7 @@ async function bootstrap() {
   // RUN_MIGRATIONS_ON_BOOT=false to run them out-of-band instead.
   if (process.env.DATABASE_URL && process.env.RUN_MIGRATIONS_ON_BOOT !== "false") {
     try {
-      await runMigrations(process.env.DATABASE_URL);
+      await runMigrations(process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL);
       // eslint-disable-next-line no-console
       console.log("[migrate] schema up to date");
     } catch (err) {

@@ -244,10 +244,10 @@ async function main() {
   console.log("Upserting config/fees…");
   await db
     .insert(config)
-    .values({ key: "fees", value: { deliveryFeeKobo: 150000, serviceFeePercent: 3 } })
+    .values({ key: "fees", value: { deliveryFeeKobo: 50_000, serviceFeePercent: 3 } })
     .onConflictDoUpdate({
       target: config.key,
-      set: { value: { deliveryFeeKobo: 150000, serviceFeePercent: 3 }, updatedAt: new Date() },
+      set: { value: { deliveryFeeKobo: 50_000, serviceFeePercent: 3 }, updatedAt: new Date() },
     });
 
   console.log(

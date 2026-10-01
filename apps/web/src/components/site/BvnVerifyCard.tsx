@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Field";
@@ -47,15 +47,7 @@ const VERDICT_COPY: Record<IdentityCheck["verdict"], string> = {
   mismatch: "The details didn't match. A credit officer will be in touch.",
 };
 
-// NIBSS decides which contacts it will use — we can only order and label
-// them. Email goes first: it works for everyone regardless of network, and
-// until our own SMS provider is live it's the route we can best support.
-const METHOD_ORDER = (m: string) =>
-  m.includes("email") ? 0 : m === "alternate_phone" ? 2 : 1;
-
 function methodLabel(m: OtpMethod): string {
-  if (m.method.includes("email")) return m.hint ? `Email — ${m.hint}` : "Send to my email on file";
-  if (m.method === "alternate_phone") return "Send to a phone number I choose";
   return m.hint ? `SMS — ${m.hint}` : "Send to my phone on file";
 }
 
@@ -72,13 +64,12 @@ function parseWaitSeconds(message: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) => void }) {
+export function BvnVerifyCard({ savedBvnAvailable = false, onVerified }: { savedBvnAvailable?: boolean; onVerified?: (c: IdentityCheck) => void }) {
+  const autoStarted = useRef(false);
   const [stage, setStage] = useState<Stage>("bvn");
   const [bvn, setBvn] = useState("");
   const [methods, setMethods] = useState<OtpMethod[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
-  const [altPhone, setAltPhone] = useState("");
-  const [altOpen, setAltOpen] = useState(false);
   const [otp, setOtp] = useState("");
   const [check, setCheck] = useState<IdentityCheck | null>(null);
   const [sandbox, setSandbox] = useState(false);
@@ -109,7 +100,7 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
     return res.json();
   }, []);
 
-  async function run(fn: () => Promise<void>) {
+  const run = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(null);
     try {
@@ -125,15 +116,13 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
 
-  const start = () =>
+  const start = useCallback(() =>
     run(async () => {
-      const body = await post("/v1/kyc/bvn-lookup/start", { bvn: bvn.trim() });
+      const body = await post("/v1/kyc/bvn-lookup/start", savedBvnAvailable ? {} : { bvn: bvn.trim() });
       setMethods(
-        [...((body.methods ?? []) as OtpMethod[])].sort(
-          (a, b) => METHOD_ORDER(a.method) - METHOD_ORDER(b.method),
-        ),
+        ((body.methods ?? []) as OtpMethod[]).filter((m) => /^(phone(?:_\d+)?|sms)$/.test(m.method)),
       );
       setSandbox(body.live === false);
       setSessionExpiresAt(
@@ -141,17 +130,18 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
       );
       setResendAt(null);
       setStage("method");
-    });
+    }), [run, post, savedBvnAvailable, bvn]);
+
+  useEffect(() => {
+    if (!savedBvnAvailable || autoStarted.current) return;
+    autoStarted.current = true;
+    void start();
+  }, [savedBvnAvailable, start]);
 
   const sendOtp = (method: string) =>
     run(async () => {
-      const needsPhone = method === "alternate_phone";
-      if (needsPhone && altPhone.trim().length < 7) {
-        throw new Error("Enter the phone number the code should go to.");
-      }
       const body = await post("/v1/kyc/bvn-lookup/send-otp", {
         method,
-        ...(needsPhone ? { phoneNumber: altPhone.trim() } : {}),
       });
       setChosen(method);
       if (typeof body.expiresInSeconds === "number") {
@@ -179,13 +169,12 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
   function restart() {
     setMethods([]);
     setChosen(null);
-    setAltPhone("");
-    setAltOpen(false);
     setOtp("");
     setSessionExpiresAt(null);
     setResendAt(null);
     setError(null);
     setStage("bvn");
+    if (savedBvnAvailable) void start();
   }
 
   if (stage === "done" && check) {
@@ -216,7 +205,7 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
       <p className="text-sm font-medium text-text-dark">Verify your identity</p>
       <p className="mt-1 text-xs text-text-muted">
         We check your BVN against the national record. You&apos;ll approve it with a code sent to
-        the phone number or email your bank has on file — we never see your banking password, and
+        the phone number linked to your BVN — we never see your banking password, and
         nothing can be moved from your account.
       </p>
       {sandbox && (
@@ -227,17 +216,17 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
 
       {stage === "bvn" && (
         <div className="mt-3 flex flex-col gap-3">
-          <Input
+          {!savedBvnAvailable && <Input
             label="BVN"
             inputMode="numeric"
             maxLength={11}
             value={bvn}
             onChange={(e) => setBvn(e.target.value.replace(/\D/g, ""))}
-          />
+          />}
           <Button
             type="button"
             variant="secondary"
-            disabled={busy || bvn.length !== 11}
+            disabled={busy || (!savedBvnAvailable && bvn.length !== 11)}
             onClick={start}
           >
             {busy ? "Checking…" : "Continue"}
@@ -256,34 +245,22 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
       {stage === "method" && !sessionExpired && (
         <div className="mt-3 flex flex-col gap-3">
           <p className="text-xs text-text-medium">
-            Where should we send your approval code? These are the contacts your bank has on file
-            for this BVN.
+            Your approval code will only be sent by SMS to the phone number linked to your BVN.
           </p>
-          {!methods.some((m) => m.method.includes("email")) && (
+          {methods.length === 0 && (
             <p className="text-xs text-text-muted">
-              No email is on file for this BVN, so the code can only go by text message.
+              No linked phone number is available for verification. Please contact support.
             </p>
           )}
           {methods.map((m) => (
             <div key={m.method} className="flex flex-col gap-2">
-              {/* The number box only appears once they pick this option. */}
-              {m.method === "alternate_phone" && altOpen && (
-                <Input
-                  label="Phone number"
-                  inputMode="tel"
-                  value={altPhone}
-                  onChange={(e) => setAltPhone(e.target.value)}
-                />
-              )}
               <Button
                 type="button"
                 variant="secondary"
                 disabled={busy}
-                onClick={() =>
-                  m.method === "alternate_phone" && !altOpen ? setAltOpen(true) : sendOtp(m.method)
-                }
+                onClick={() => sendOtp(m.method)}
               >
-                {m.method === "alternate_phone" && altOpen ? "Send code to this number" : methodLabel(m)}
+                {methodLabel(m)}
               </Button>
             </div>
           ))}
@@ -318,24 +295,17 @@ export function BvnVerifyCard({ onVerified }: { onVerified?: (c: IdentityCheck) 
               onClick={() => setStage("method")}
               disabled={busy}
             >
-              Send it somewhere else
+              View linked phone options
             </button>
           </div>
-          {chosen === "alternate_phone" && (
-            <p className="text-xs text-text-muted">Sent to {altPhone}.</p>
-          )}
-          {chosen?.includes("email") && (
-            <p className="text-xs text-text-muted">
-              Check the inbox of the email your bank has on file — and the spam folder.
-            </p>
-          )}
+          <p className="text-xs text-text-muted">Check the phone number linked to your BVN for the code.</p>
         </div>
       )}
 
       {sessionExpired && (
         <div className="mt-3 flex flex-col gap-2">
           <p className="text-xs text-text-muted">
-            Nothing was checked — start again with your BVN to get a fresh code.
+            This session has expired. Start again to get a fresh code.
           </p>
           <Button type="button" variant="secondary" onClick={restart}>
             Start again

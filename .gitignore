@@ -14,3 +14,4 @@ coverage/
 Thumbs.db
 pgdata/
 minio-data/
+.neon

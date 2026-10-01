@@ -95,6 +95,7 @@ interface KycView {
   bankLinkRequested: boolean;
   bankLinked: boolean;
   identityChecked: boolean;
+  savedBvnAvailable: boolean;
   // Mono Connect v2 won't open without the customer's email.
   email: string | null;
   fullName: string | null;
@@ -168,6 +169,7 @@ export default function AccountPage() {
           bankLinkRequested: !!body?.profile?.bankLinkRequestedAt,
           bankLinked: !!body?.profile?.monoAccountId,
           identityChecked: !!body?.profile?.identityLookup,
+          savedBvnAvailable: !!body?.profile?.bvnMashupAvailable,
           email: body?.profile?.email ?? null,
           fullName: body?.profile?.fullName ?? null,
         });
@@ -238,9 +240,9 @@ export default function AccountPage() {
                 <Badge tone={verification.tone}>{verification.label}</Badge>
                 <p className="text-sm text-text-medium">{verification.blurb}</p>
               </div>
-              {session.verificationStatus !== "verified" && (
+              {(session.verificationStatus === "unverified" || session.verificationStatus === "needs_more_info") && (
                 <Button variant="secondary" onClick={() => router.push("/apply")}>
-                  Continue application
+                  {session.verificationStatus === "needs_more_info" ? "Update application" : "Continue application"}
                 </Button>
               )}
             </div>
@@ -273,7 +275,7 @@ export default function AccountPage() {
               already started, and NIBSS asks their permission anyway. Hidden
               once a check is on file — re-running it is a reviewer's call. */}
           {kyc && !kyc.identityChecked && !identityChecked && (
-            <BvnVerifyCard onVerified={setIdentityChecked} />
+            <BvnVerifyCard savedBvnAvailable={kyc.savedBvnAvailable} onVerified={setIdentityChecked} />
           )}
           {identityChecked && (
             <Card className="mt-6 p-5">

@@ -192,11 +192,11 @@ export class LinkBankDto implements LinkBankInput {
 // never crosses the wire — KycService holds it against the user id — so these
 // bodies carry only what the applicant actually types.
 export const bvnLookupStartSchema = z.object({
-  bvn: z.string().regex(/^\d{11}$/, "BVN must be 11 digits"),
+  bvn: z.string().regex(/^\d{11}$/, "BVN must be 11 digits").optional(),
 });
 export type BvnLookupStartInput = z.infer<typeof bvnLookupStartSchema>;
 export class BvnLookupStartDto implements BvnLookupStartInput {
-  @ApiProperty({ description: "11-digit BVN to verify" }) bvn!: string;
+  @ApiPropertyOptional({ description: "11-digit BVN; omit to use the BVN on file" }) bvn?: string;
 }
 
 export const bvnLookupOtpSchema = z.object({

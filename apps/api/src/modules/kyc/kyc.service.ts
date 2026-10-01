@@ -537,23 +537,31 @@ export class KycService {
   // ── Identity verification (Mono Lookup, §9.1) ───────────────────────────
 
   /**
-   * Stage 1 of BVN consent. The applicant retypes their BVN because we only
-   * ever stored a hash of it (§13) — there is nothing to look up on their
-   * behalf. That hash does let us check they're verifying the BVN they
-   * actually declared, rather than any valid one.
+   * Stage 1 of BVN consent. Reuse the encrypted BVN on file server-side.
+   * Older profiles holding only a hash must supply the number once more.
    *
    * The Mono session id stays server-side, keyed by user id: handing it to
    * the browser would let whoever holds it finish someone else's consent.
    */
-  async startBvnLookup(userId: string, bvn: string) {
+  async startBvnLookup(userId: string, suppliedBvn?: string) {
     const profile = await this.getProfileRow(userId);
+    const savedBvn = decryptSecretOrNull(profile.bvnEncrypted);
+    const bvn = savedBvn ?? suppliedBvn;
+    if (!bvn) {
+      throw new BadRequestException("Please enter your BVN once more — the previously saved number cannot be recovered.");
+    }
     if (profile.bvnHash && !(await argon2.verify(profile.bvnHash, bvn))) {
       throw new BadRequestException("That BVN doesn't match the one on your application");
     }
     const { sessionId, methods } = await this.lookup.initiateBvn(bvn);
+    if (!savedBvn && profile.bvnHash && hasEncryptionKey()) {
+      await this.db.update(applicantProfiles)
+        .set({ bvnEncrypted: encryptSecret(bvn), updatedAt: new Date() })
+        .where(eq(applicantProfiles.userId, userId));
+    }
     this.bvnConsents.set(userId, { sessionId, expiresAt: Date.now() + BVN_CONSENT_TTL_MS, lastOtpSentAt: null });
     return {
-      methods,
+      methods: methods.filter((m) => /^(phone(?:_\d+)?|sms)$/.test(m.method)),
       expiresInSeconds: BVN_CONSENT_TTL_MS / 1000,
       // So the UI can say "sandbox result" rather than implying NIBSS
       // confirmed anything.
@@ -567,6 +575,9 @@ export class KycService {
    * just in the UI) so a bypassed or scripted client can't spam Mono.
    */
   async sendBvnLookupOtp(userId: string, method: string, phoneNumber?: string) {
+    if (!/^(phone(?:_\d+)?|sms)$/.test(method) || phoneNumber !== undefined) {
+      throw new BadRequestException("Approval codes can only be sent to the phone number linked to your BVN.");
+    }
     const consent = this.activeConsent(userId);
     if (consent.lastOtpSentAt && Date.now() - consent.lastOtpSentAt < BVN_OTP_RESEND_COOLDOWN_MS) {
       const wait = Math.ceil(

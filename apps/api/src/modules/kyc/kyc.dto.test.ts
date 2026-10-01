@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { updateKycSchema } from "./dto/kyc.dto";
+import { bvnLookupStartSchema, updateKycSchema } from "./dto/kyc.dto";
+
+describe("bvnLookupStartSchema", () => {
+  it("allows using the saved BVN without sending it from the browser", () => {
+    expect(bvnLookupStartSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("still validates a BVN supplied for a legacy profile", () => {
+    expect(bvnLookupStartSchema.safeParse({ bvn: "12345678901" }).success).toBe(true);
+    expect(bvnLookupStartSchema.safeParse({ bvn: "123" }).success).toBe(false);
+    expect(bvnLookupStartSchema.safeParse({ bvn: "" }).success).toBe(false);
+  });
+});
 
 // The point of these is that a state/LGA pair is validated as a unit and
 // stored in its official spelling, so "Abuja", "AMAC" and "Abuja Municipal"
