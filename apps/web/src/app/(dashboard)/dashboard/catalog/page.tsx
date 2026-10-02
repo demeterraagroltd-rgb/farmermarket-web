@@ -103,6 +103,13 @@ function ProductFields({
         <input type="checkbox" checked={form.isPopular} onChange={(e) => set((f) => ({ ...f, isPopular: e.target.checked }))} />
         Popular
       </label>
+      <label className="flex items-center gap-2 text-sm text-text-dark">
+        <input type="checkbox" checked={form.tags.split(",").map((tag) => tag.trim()).includes("homepage-featured")} onChange={(e) => {
+          const checked = e.target.checked;
+          set((f) => ({ ...f, tags: [...f.tags.split(",").map((tag) => tag.trim()).filter((tag) => tag && tag !== "homepage-featured"), ...(checked ? ["homepage-featured"] : [])].join(", ") }));
+        }} />
+        Show on homepage — What you can buy
+      </label>
     </>
   );
 }

@@ -15,6 +15,7 @@ export interface Product {
   brand: string;
   isAvailable: boolean;
   stockQuantity: number;
+  tags?: string[];
 }
 
 export interface Category {

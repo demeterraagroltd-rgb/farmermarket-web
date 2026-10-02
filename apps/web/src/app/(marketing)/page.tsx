@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { FeaturedProducts } from "../../components/site/FeaturedProducts";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { FaqAccordion } from "../../components/site/FaqAccordion";
 import { RepaymentCalculator } from "../../components/site/RepaymentCalculator";
@@ -227,30 +228,7 @@ export default async function MarketingHome() {
           <p className="mx-auto mt-3 max-w-md text-center text-text-medium">
             Real staples, published straight from the Farmer Market dashboard.
           </p>
-          <div className="mt-12 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[
-              { src: "/products/big-bull-rice-50kg.jpg", label: "Rice" },
-              { src: "/products/kings-oil-10l.jpg", label: "Cooking oil" },
-              { src: "/products/mamador-vegetable-oil-500ml.webp", label: "Vegetable oil" },
-              { src: "/products/power-oil-5lts.jpg", label: "Cooking oil" },
-            ].map((p) => (
-              <Link
-                key={p.src}
-                href="/marketplace"
-                className="group overflow-hidden rounded-[var(--radius-lg)] border border-dark-border/60 transition-shadow hover:shadow-[var(--shadow-card)]"
-              >
-                <div className="aspect-square overflow-hidden bg-surface">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={p.src}
-                    alt={p.label}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                </div>
-                <p className="px-3 py-2.5 text-sm font-medium text-text-dark">{p.label}</p>
-              </Link>
-            ))}
-          </div>
+          <FeaturedProducts />
           <div className="mt-8 text-center">
             <Link href="/marketplace" className="text-sm font-semibold text-primary hover:underline">
               See the full marketplace →
