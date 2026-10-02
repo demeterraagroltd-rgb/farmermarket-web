@@ -105,34 +105,37 @@ export default async function MarketingHome() {
       <HomeStorefront />
 
       {/* How it works */}
-      <section id="how-it-works" className="scroll-mt-40 w-full bg-surface px-6 py-12">
-        <div className="mx-auto max-w-5xl">
-          <p className="text-center text-sm font-bold uppercase tracking-wide text-primary">Grocery credit</p>
-          <h2 className="mt-2 text-center text-3xl font-bold tracking-tight text-text-dark sm:text-4xl">
-            How it works
-          </h2>
-          <div className="relative mt-16 grid gap-10 sm:grid-cols-3">
-            <div className="absolute left-0 right-0 top-8 hidden h-0.5 bg-dark-border/40 sm:block" />
-            {HOW_IT_WORKS.map(({ icon: Icon, title, body }, i) => (
-              <div key={title} className="relative flex flex-col items-center text-center">
-                <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-white text-primary shadow-[var(--shadow-card)]">
-                  <Icon className="h-7 w-7" />
-                </div>
-                <span className="mt-3 text-xs font-bold uppercase tracking-wide text-gold-dark">
-                  Step {i + 1}
-                </span>
-                <h3 className="mt-1 text-lg font-semibold text-text-dark">{title}</h3>
-                <p className="mt-2 max-w-[240px] text-sm text-text-medium">{body}</p>
-              </div>
-            ))}
+      <section id="how-it-works" aria-labelledby="credit-title" className="scroll-mt-40 w-full px-4 py-8 sm:px-6">
+        <div className="mx-auto grid max-w-6xl items-center gap-8 overflow-hidden rounded-2xl border border-primary/10 bg-white p-6 sm:p-8 lg:grid-cols-[1.3fr_0.8fr] lg:gap-12">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-primary">Grocery credit</p>
+            <h2 id="credit-title" className="mt-3 max-w-lg text-3xl font-bold leading-tight tracking-tight text-text-dark sm:text-4xl">
+              Groceries today.<br />Repay around payday.
+            </h2>
+            <p className="mt-4 max-w-lg text-sm leading-relaxed text-text-medium">
+              Give your household a little more room before payday. Apply for grocery credit and choose a repayment plan that fits your budget.
+            </p>
+            <ol className="mt-6 space-y-4">
+              {HOW_IT_WORKS.map(({ title, body }, i) => (
+                <li key={title} className="flex gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-surface text-sm font-bold text-primary">{i + 1}</span>
+                  <div><h3 className="text-sm font-semibold text-text-dark">{title}</h3><p className="mt-1 max-w-md text-sm leading-relaxed text-text-medium">{body}</p></div>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-6 flex flex-wrap items-center gap-4">
+              <Link href="/apply" className="inline-flex min-h-11 items-center justify-center rounded-md bg-gold px-5 py-3 text-sm font-semibold text-text-dark transition-colors hover:bg-gold-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Apply for credit</Link>
+              <a href="#plans" className="text-sm font-semibold text-primary hover:underline">Compare payment plans →</a>
+            </div>
+            <p className="mt-3 text-xs text-text-muted">Credit subject to approval.</p>
           </div>
-
-          <div className="mx-auto mt-8 max-w-sm overflow-hidden rounded-[var(--radius-lg)] shadow-[var(--shadow-card)]">
+          <div className="mx-auto w-full max-w-sm overflow-hidden rounded-xl bg-primary-surface">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://res.cloudinary.com/hr9pb13k/image/upload/v1787880745/Promo_image1.png"
-              alt="Farmer Market — buy food now, pay later"
-              className="max-h-80 w-full object-contain"
+              alt="Two smiling professionals representing public and private sector applicants"
+              loading="lazy"
+              className="aspect-square w-full object-contain"
             />
           </div>
         </div>

@@ -10,7 +10,7 @@ import { getCustomerSession, type CustomerSession } from "../../lib/customer";
 import { CartLink } from "./CartLink";
 import { CartIcon, LeafIcon, WalletIcon } from "../ui/icons";
 
-const actionClass = "inline-flex min-h-11 items-center justify-center rounded-md bg-[#ff7417] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#e45b00] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+const actionClass = "inline-flex min-h-11 items-center justify-center rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-text-dark transition-colors hover:bg-gold-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 const categoryHref = (name: string) => `/marketplace?category=${encodeURIComponent(name)}`;
 
 export function HomeStorefront() {
@@ -97,7 +97,7 @@ export function HomeStorefront() {
           <Image src="/homepage-groceries.png" alt="" fill priority sizes="(min-width: 1024px) 760px, 100vw" className="-z-20 object-cover object-right" />
           <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#005b39]/95 via-[#005b39]/70 to-transparent" />
           <div className="max-w-md px-6 py-9 text-white sm:px-8 sm:py-12">
-            <h1 id="home-hero-title" className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">Stock up<br /><span className="text-[#ffe79d]">for the month.</span></h1>
+            <h1 id="home-hero-title" className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">Stock up<br /><span className="text-gold-light">for the month.</span></h1>
             <p className="mt-4 max-w-64 text-sm sm:text-base">Everyday essentials, all in one place.</p>
             <Link href="/marketplace" className={actionClass + " mt-6"}>Shop groceries</Link>
           </div>
@@ -151,7 +151,7 @@ export function HomeStorefront() {
       </section>
 
       <section className="overflow-hidden rounded-lg border border-gray-200 bg-white" aria-labelledby="bundles-title">
-        <div className="flex items-center justify-between gap-4 bg-[#ffdfb9] px-4 py-3">
+        <div className="flex items-center justify-between gap-4 bg-gold-light/40 px-4 py-3">
           <h2 id="bundles-title" className="text-lg font-bold">Bundles for your household</h2>
           <Link href={categoryHref("Bundles")} className="text-sm font-medium hover:underline">See all →</Link>
         </div>
@@ -161,7 +161,7 @@ export function HomeStorefront() {
           <div className="grid gap-3 p-3 md:grid-cols-3">{featuredBundles.map((b) => <Link key={b.id} href={`/marketplace/bundles/${b.slug}`} className="flex min-w-0 gap-3 rounded-md border border-gray-100 p-3 hover:shadow-md">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {b.imageUrl ? <img src={b.imageUrl} alt="" loading="lazy" className="h-32 w-28 shrink-0 object-contain" /> : <CartIcon className="m-6 h-12 w-12 shrink-0 text-primary" />}
-            <div className="flex min-w-0 flex-col items-start"><h3 className="font-semibold">{b.name}</h3><p className="mt-2 line-clamp-2 text-xs text-text-medium">{b.description || b.items.map((i) => i.name).join(", ")}</p><p className="my-2 text-sm font-bold text-primary">{b.bundlePrice === null ? "Price coming soon" : formatNairaAmount(b.bundlePrice)}</p><span className="mt-auto rounded-md bg-[#ff7417] px-3 py-2 text-xs font-semibold text-white">Explore bundle</span></div>
+            <div className="flex min-w-0 flex-col items-start"><h3 className="font-semibold">{b.name}</h3><p className="mt-2 line-clamp-2 text-xs text-text-medium">{b.description || b.items.map((i) => i.name).join(", ")}</p><p className="my-2 text-sm font-bold text-primary">{b.bundlePrice === null ? "Price coming soon" : formatNairaAmount(b.bundlePrice)}</p><span className="mt-auto rounded-md bg-gold px-3 py-2 text-xs font-semibold text-text-dark">Explore bundle</span></div>
           </Link>)}</div>}
       </section>
     </div>
