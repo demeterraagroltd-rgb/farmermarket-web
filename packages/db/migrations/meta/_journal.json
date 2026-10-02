@@ -120,6 +120,13 @@
       "when": 1790338702537,
       "tag": "0016_woozy_nick_fury",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790905735155,
+      "tag": "0017_true_jack_power",
+      "breakpoints": true
     }
   ]
 }

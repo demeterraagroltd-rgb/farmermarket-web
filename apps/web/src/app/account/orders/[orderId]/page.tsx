@@ -11,7 +11,9 @@ import { ORDER_STATUS_TONE, orderStatusLabel, pickupFieldLabel, pickupLabel } fr
 import { accountFetch, getCustomerSession } from "../../../../lib/customer";
 
 interface OrderItem {
-  productId: string;
+  productId: string | null;
+  bundleId?: string | null;
+  components?: { productId: string; name: string; quantity: number; totalQuantity: number }[];
   name: string;
   imageUrl: string | null;
   quantity: number;
@@ -104,7 +106,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ orderId:
                 <p className="text-sm font-semibold text-text-dark">Items</p>
                 <div className="mt-3 flex flex-col divide-y divide-dark-border/40">
                   {order.items.map((item) => (
-                    <div key={item.productId} className="flex justify-between gap-4 py-2 text-sm">
+                    <div key={item.bundleId ?? item.productId} className="flex justify-between gap-4 py-2 text-sm">
                       <span className="text-text-medium">
                         {item.quantity}× {item.name}
                       </span>

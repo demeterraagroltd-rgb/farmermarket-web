@@ -10,3 +10,4 @@ export * from "./kyc.js";
 export * from "./inbox.js";
 export * from "./mono.js";
 export * from "./direct-debit.js";
+export * from "./bundles.js";

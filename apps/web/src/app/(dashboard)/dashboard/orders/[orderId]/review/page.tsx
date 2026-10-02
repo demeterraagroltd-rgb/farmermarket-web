@@ -26,6 +26,8 @@ const ORDER_STATUS_TONE: Record<string, Tone> = {
 };
 
 interface OrderItem {
+  bundleId?: string | null;
+  components?: { productId: string; name: string; totalQuantity: number }[];
   name: string;
   imageUrl: string;
   quantity: number;

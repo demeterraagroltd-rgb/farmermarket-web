@@ -11,7 +11,9 @@ import { pickupLabel } from "../../../lib/orders";
 import { accountFetch } from "../../../lib/customer";
 
 interface OrderItem {
-  productId: string;
+  productId: string | null;
+  bundleId?: string | null;
+  components?: { productId: string; name: string; quantity: number; totalQuantity: number }[];
   name: string;
   quantity: number;
   unitPrice: number;
@@ -73,7 +75,7 @@ function ConfirmationContent() {
             <div className="mt-6 rounded-[var(--radius-lg)] bg-surface p-4 text-left text-sm">
               <div className="flex flex-col divide-y divide-dark-border/40">
                 {order.items.map((item) => (
-                  <div key={item.productId} className="flex justify-between py-1.5">
+                  <div key={item.bundleId ?? item.productId} className="flex justify-between py-1.5">
                     <span className="text-text-medium">
                       {item.quantity}× {item.name}
                     </span>

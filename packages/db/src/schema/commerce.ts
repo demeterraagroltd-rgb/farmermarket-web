@@ -1,7 +1,8 @@
-import { bigint, boolean, check, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users, staff } from "./identity.js";
 import { bnplPlans, products } from "./catalog.js";
+import { bundles, type OrderComponentSnapshot } from "./bundles.js";
 
 export const orderStatusEnum = pgEnum("order_status", [
   // A verified buyer's order lands here first; a staff member approves it
@@ -66,6 +67,7 @@ export const orders = pgTable(
     approvedByStaffId: uuid("approved_by_staff_id").references(() => staff.id),
     deliverySlot: text("delivery_slot"), // human string shown to the buyer, e.g. "Tue 3 Sep, 9am–12pm"
     rejectionReason: text("rejection_reason"),
+    stockReserved: boolean("stock_reserved").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -79,6 +81,8 @@ export const orderItems = pgTable("order_items", {
   id: uuid("id").primaryKey().defaultRandom(),
   orderId: uuid("order_id").notNull().references(() => orders.id),
   productId: uuid("product_id").references(() => products.id),
+  bundleId: uuid("bundle_id").references(() => bundles.id),
+  components: jsonb("components").$type<OrderComponentSnapshot[]>().notNull().default(sql`'[]'::jsonb`),
   name: text("name").notNull(),
   imageUrl: text("image_url").notNull(),
   quantity: integer("quantity").notNull(),

@@ -15,6 +15,8 @@ const DELIVERY_FEE_NAIRA = 500;
 const SERVICE_FEE_RATE = 0.03;
 
 export interface CartProduct {
+  kind?: "product" | "bundle";
+  slug?: string;
   id: string;
   name: string;
   imageUrl: string;

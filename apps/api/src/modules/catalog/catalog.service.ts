@@ -53,6 +53,7 @@ export class CatalogService {
 
     return rows.map((row) => ({
       ...row.products,
+      isAvailable: row.products.isAvailable && row.products.stockQuantity > 0,
       price: koboToNaira(row.products.priceKobo),
       discountPrice:
         row.products.discountPriceKobo !== null

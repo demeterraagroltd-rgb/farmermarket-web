@@ -1,5 +1,6 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Param } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import { BundlesService } from "./bundles.service";
 import { CatalogService } from "./catalog.service";
 
 // Public — no auth. Consumed by the public web `/marketplace` page and by
@@ -7,7 +8,13 @@ import { CatalogService } from "./catalog.service";
 @ApiTags("catalog")
 @Controller("catalog")
 export class CatalogController {
-  constructor(private readonly catalogService: CatalogService) {}
+  constructor(private readonly catalogService: CatalogService, private readonly bundlesService: BundlesService) {}
+
+  @Get("bundles")
+  listBundles() { return this.bundlesService.list(true); }
+
+  @Get("bundles/:slug")
+  getBundle(@Param("slug") slug: string) { return this.bundlesService.findBySlug(slug); }
 
   // GET /v1/catalog/products — the published+available filter is fixed in the
   // service (there's only one public view), so no query params are needed.

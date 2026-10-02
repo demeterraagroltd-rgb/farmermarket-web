@@ -141,7 +141,7 @@ export default function CheckoutPage() {
       const orderRes = await accountFetch("/v1/orders", {
         method: "POST",
         body: JSON.stringify({
-          items: lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
+          items: lines.map((l) => ({ ...(l.product.kind === "bundle" ? { bundleId: l.product.id } : { productId: l.product.id }), quantity: l.quantity })),
           pickupCenterId,
           pickupDate,
           bnplPlanId: selectedPlan.id,

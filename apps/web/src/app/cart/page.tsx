@@ -49,15 +49,15 @@ export default function CartPage() {
             <>
               <Card className="mt-6 divide-y divide-dark-border/40 overflow-hidden">
                 {lines.map((line) => (
-                  <div key={line.product.id} className="flex items-center gap-4 p-4">
+                  <div key={line.product.id} className="flex flex-wrap items-center gap-4 p-4 sm:flex-nowrap">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={line.product.imageUrl}
                       alt={line.product.name}
-                      className="h-16 w-16 shrink-0 rounded-[var(--radius-sm)] object-cover"
+                      className="h-16 w-16 shrink-0 rounded-[var(--radius-sm)] object-contain"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-text-dark">{line.product.name}</p>
+                      <Link href={line.product.kind === "bundle" ? `/marketplace/bundles/${line.product.slug}` : `/marketplace/${line.product.id}`} className="block truncate font-semibold text-text-dark">{line.product.name}</Link>
                       <p className="text-xs text-text-muted">
                         {line.product.unit} · {formatNairaAmount(line.product.price)} each
                       </p>

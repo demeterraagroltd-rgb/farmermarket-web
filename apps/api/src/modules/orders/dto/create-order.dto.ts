@@ -1,4 +1,4 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { z } from "zod";
 
 // Matches exactly what OrdersRepository.placeOrder() in the Flutter app
@@ -6,9 +6,10 @@ import { z } from "zod";
 // file was written against this contract before the API existed. It will need
 // the pickup centre + date added: orders are collected, not delivered.
 export const createOrderItemSchema = z.object({
-  productId: z.string().uuid(),
-  quantity: z.number().int().positive(),
-});
+  productId: z.string().uuid().optional(),
+  bundleId: z.string().uuid().optional(),
+  quantity: z.number().int().positive().max(10000),
+}).refine((item) => !!item.productId !== !!item.bundleId, "Choose exactly one product or bundle");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -29,7 +30,8 @@ export const createOrderSchema = z.object({
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 export class CreateOrderItemDto {
-  @ApiProperty() productId!: string;
+  @ApiPropertyOptional() productId?: string;
+  @ApiPropertyOptional() bundleId?: string;
   @ApiProperty() quantity!: number;
 }
 

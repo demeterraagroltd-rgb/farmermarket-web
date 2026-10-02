@@ -1,11 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { koboToNaira, percentOfKobo } from "@farmermarket/core";
 import {
   orders,
   orderItems,
   pickupCenters,
-  products,
   bnplPlans,
   creditProfiles,
   creditLimitChanges,
@@ -20,6 +19,7 @@ import { AuthService } from "../auth/auth.service";
 import { KycService } from "../kyc/kyc.service";
 import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
+import { reserveOrderLines, releaseOrderStock } from "./order-inventory";
 import type { CreateOrderInput } from "./dto/create-order.dto";
 
 // Hardcoded to match the Flutter app's `Cart` fees exactly (§5.7) — both
@@ -140,17 +140,18 @@ export class OrdersService {
     if (["pending_approval", "confirmed", "rejected"].includes(status)) {
       throw new BadRequestException("Use the approve / reject actions for this transition");
     }
-    const [row] = await this.db
-      .update(orders)
-      .set({
-        status,
-        deliveredAt: status === "delivered" ? new Date() : undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(orders.id, orderId))
-      .returning();
-    if (!row) throw new NotFoundException("Order not found");
-    return this.attachItems(row);
+    return this.db.transaction(async (tx) => {
+      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
+      if (!order) throw new NotFoundException("Order not found");
+      if (["rejected", "cancelled", "delivered"].includes(order.status)) throw new BadRequestException("This order is already closed");
+      if (order.status === "pending_approval") throw new BadRequestException("Approve or reject the pending order first");
+      if (status === "cancelled") await releaseOrderStock(tx, order);
+      const [row] = await tx.update(orders).set({ status,
+        deliveredAt: status === "delivered" ? new Date() : undefined, updatedAt: new Date(),
+      }).where(eq(orders.id, orderId)).returning();
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+      return this.toResponse(row, items);
+    });
   }
 
   /**
@@ -163,15 +164,7 @@ export class OrdersService {
     await this.kyc.assertVerified(userId); // 403 NOT_VERIFIED otherwise
 
     const response = await this.db.transaction(async (tx) => {
-      const productIds = input.items.map((i) => i.productId);
-      const productRows = await tx.select().from(products).where(inArray(products.id, productIds));
-      const productById = new Map(productRows.map((p) => [p.id, p]));
-      for (const item of input.items) {
-        const product = productById.get(item.productId);
-        if (!product || product.status !== "published" || !product.isAvailable) {
-          throw new BadRequestException(`Product ${item.productId} is not available`);
-        }
-      }
+      const resolvedLines = await reserveOrderLines(tx, input.items);
 
       const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, input.bnplPlanId)).limit(1);
       if (!plan || !plan.isActive) throw new BadRequestException("Selected plan is not available");
@@ -185,10 +178,7 @@ export class OrdersService {
         throw new BadRequestException("That pickup centre isn't available — choose another");
       }
 
-      const subtotalKobo = input.items.reduce((sum, item) => {
-        const price = productById.get(item.productId)!.priceKobo;
-        return sum + price * BigInt(item.quantity);
-      }, 0n);
+      const subtotalKobo = resolvedLines.reduce((sum, item) => sum + item.unitPriceKobo * BigInt(item.quantity), 0n);
       const totalKobo = subtotalKobo + DELIVERY_FEE_KOBO + percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT);
 
       const [order] = await tx
@@ -196,6 +186,7 @@ export class OrdersService {
         .values({
           userId,
           status: "pending_approval",
+          stockReserved: true,
           subtotalKobo,
           deliveryFeeKobo: DELIVERY_FEE_KOBO,
           serviceFeeKobo: percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT),
@@ -211,17 +202,7 @@ export class OrdersService {
       const items = await tx
         .insert(orderItems)
         .values(
-          input.items.map((item) => {
-            const product = productById.get(item.productId)!;
-            return {
-              orderId: order.id,
-              productId: product.id,
-              name: product.name,
-              imageUrl: product.imageUrl,
-              quantity: item.quantity,
-              unitPriceKobo: product.priceKobo,
-            };
-          }),
+          resolvedLines.map((item) => ({ ...item, orderId: order.id })),
         )
         .returning();
 
@@ -253,7 +234,7 @@ export class OrdersService {
    */
   async approve(orderId: string, staffId: string, deliverySlot?: string) {
     return this.db.transaction(async (tx) => {
-      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1).for("update");
       if (!order) throw new NotFoundException("Order not found");
       if (order.status !== "pending_approval") {
         throw new BadRequestException(`Order is already ${order.status}`);
@@ -334,19 +315,18 @@ export class OrdersService {
   }
 
   async reject(orderId: string, staffId: string, reason: string) {
-    const [order] = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.status !== "pending_approval") {
-      throw new BadRequestException(`Order is already ${order.status}`);
-    }
-    const [updated] = await this.db
-      .update(orders)
-      .set({ status: "rejected", rejectionReason: reason, approvedByStaffId: staffId, updatedAt: new Date() })
-      .where(eq(orders.id, orderId))
-      .returning();
-    const response = await this.attachItems(updated);
-    await this.notifyBuyer(order.userId, (name) => emails.orderRejected(name, { orderId, reason }));
-    return { ...response, userId: order.userId };
+    const result = await this.db.transaction(async (tx) => {
+      const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
+      if (!order) throw new NotFoundException("Order not found");
+      if (order.status !== "pending_approval") throw new BadRequestException(`Order is already ${order.status}`);
+      await releaseOrderStock(tx, order);
+      const [updated] = await tx.update(orders).set({ status: "rejected", rejectionReason: reason,
+        approvedByStaffId: staffId, updatedAt: new Date() }).where(eq(orders.id, orderId)).returning();
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+      return { ...this.toResponse(updated, items), userId: order.userId };
+    });
+    await this.notifyBuyer(result.userId, (name) => emails.orderRejected(name, { orderId, reason }));
+    return result;
   }
 
   /**
@@ -404,6 +384,9 @@ export class OrdersService {
       status: order.status,
       items: items.map((item) => ({
         productId: item.productId,
+        bundleId: item.bundleId,
+        kind: item.bundleId ? "bundle" : "product",
+        components: item.components.map((i) => ({ ...i, unitPrice: koboToNaira(BigInt(i.unitPriceKobo)), totalQuantity: i.quantity * item.quantity })),
         name: item.name,
         imageUrl: item.imageUrl,
         quantity: item.quantity,

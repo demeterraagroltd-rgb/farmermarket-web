@@ -8,6 +8,8 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentStaff, type AuthenticatedStaff } from "../../common/decorators/current-staff.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { BundlesService } from "./bundles.service";
+import { bundleSchema, type BundleInput } from "./dto/bundle.dto";
 import { CatalogService } from "./catalog.service";
 import {
   CreateCategoryDto,
@@ -32,7 +34,16 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("super_admin", "admin")
 export class AdminCatalogController {
-  constructor(private readonly catalogService: CatalogService) {}
+  constructor(private readonly catalogService: CatalogService, private readonly bundlesService: BundlesService) {}
+
+  @Get("bundles")
+  listBundles() { return this.bundlesService.list(); }
+
+  @Post("bundles")
+  createBundle(@Body(new ZodValidationPipe(bundleSchema)) body: BundleInput) { return this.bundlesService.save(body); }
+
+  @Patch("bundles/:id")
+  updateBundle(@Param("id") id: string, @Body(new ZodValidationPipe(bundleSchema)) body: BundleInput) { return this.bundlesService.save(body, id); }
 
   @Post("images")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))

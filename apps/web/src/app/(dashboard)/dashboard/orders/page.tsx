@@ -10,6 +10,8 @@ import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
 
 interface OrderItem {
+  bundleId?: string | null;
+  components?: { productId: string; name: string; totalQuantity: number }[];
   name: string;
   imageUrl: string;
   quantity: number;
