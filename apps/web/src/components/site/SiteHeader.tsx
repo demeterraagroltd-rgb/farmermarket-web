@@ -37,7 +37,7 @@ export function SiteHeader() {
           <Image src="/icon.png" alt="" width={30} height={30} className="rounded-[var(--radius-sm)]" />
           <span className="font-bold text-text-dark">Farmer Market</span>
         </Link>
-        <nav className="hidden items-center gap-7 text-sm font-medium text-text-medium sm:flex">
+        <nav className="hidden items-center gap-7 text-sm font-medium text-text-medium md:flex">
           <Link href="/#how-it-works" className="transition-colors hover:text-text-dark">
             How it works
           </Link>
