@@ -65,6 +65,11 @@ export default function MarketplacePage() {
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setQuery(params.get("q") ?? "");
+    setActiveCategory(params.get("category") ?? "");
+  }, []);
+  useEffect(() => {
     const controller = new AbortController();
     setError(null); setBundleError("");
     fetchBundles(controller.signal).then(setBundles).catch((err) => { if (!controller.signal.aborted) setBundleError(err instanceof Error ? err.message : "Unable to load bundles."); });

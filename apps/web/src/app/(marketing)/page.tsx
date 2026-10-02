@@ -1,7 +1,8 @@
 import Image from "next/image";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { FeaturedProducts } from "../../components/site/FeaturedProducts";
-import { SiteHeader } from "../../components/site/SiteHeader";
+import { HomeStorefront } from "../../components/site/HomeStorefront";
+
 import { FaqAccordion } from "../../components/site/FaqAccordion";
 import { RepaymentCalculator } from "../../components/site/RepaymentCalculator";
 import {
@@ -9,12 +10,16 @@ import {
   CalendarIcon,
   CartIcon,
   CheckIcon,
-  LeafIcon,
   PercentIcon,
   ShieldIcon,
-  SparkleIcon,
+
   WalletIcon,
 } from "../../components/ui/icons";
+
+export const metadata: Metadata = {
+  title: "Farmer Market — Everyday Groceries & Grocery Credit",
+  description: "Shop groceries and household bundles. Explore payment plans and apply for grocery credit, subject to approval.",
+};
 
 interface BnplPlan {
   id: string;
@@ -33,19 +38,13 @@ const HOW_IT_WORKS = [
   {
     icon: CheckIcon,
     title: "Get approved",
-    body: "A credit officer reviews your application. Once approved, your limit is live on the app.",
+    body: "A credit officer reviews your application. Once approved, view your available limit in your account.",
   },
   {
     icon: CartIcon,
     title: "Shop, pay later",
     body: "Buy groceries today with your credit limit, and pay it back on a plan that fits your payday.",
   },
-];
-
-const TRUST_POINTS = [
-  { icon: PercentIcon, label: "0% fee on Pay Now & Pay Next Salary" },
-  { icon: ShieldIcon, label: "Every application reviewed by a credit officer" },
-  { icon: LeafIcon, label: "Real staples — rice, oil, and more" },
 ];
 
 const FAQS = [
@@ -62,7 +61,7 @@ const FAQS = [
   {
     question: "What happens after I apply?",
     answer:
-      "A credit officer reviews your application — identity, employment, and the documents you provide. Once approved, your credit limit is unlocked on the Farmer Market app and you can start shopping immediately.",
+      "A credit officer reviews your identity, employment, and documents. Once approved, you can view your credit limit in your account and use it to shop.",
   },
   {
     question: "What can I buy with my credit limit?",
@@ -102,93 +101,13 @@ export default async function MarketingHome() {
   const plans = await getPlans();
 
   return (
-    <main className="flex min-h-screen flex-col bg-white">
-      <SiteHeader />
-
-      {/* Hero — asymmetric, with a decorative brand card rather than a
-          centered logo. The blurred color fields are low-opacity brand
-          tokens, not stock-photo abstraction. */}
-      <section className="relative overflow-hidden">
-        <div
-          className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(26,122,76,0.16), transparent 70%)" }}
-        />
-        <div
-          className="pointer-events-none absolute -right-32 top-20 h-96 w-96 rounded-full blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(245,166,35,0.18), transparent 70%)" }}
-        />
-
-        <div className="relative mx-auto grid max-w-6xl gap-12 px-6 py-20 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:py-28">
-          <div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-gold-dark">
-              <SparkleIcon className="h-3.5 w-3.5" />
-              Buy Now, Pay Later — for groceries
-            </span>
-            <h1 className="mt-5 max-w-xl text-5xl font-extrabold leading-[1.05] tracking-tight text-text-dark sm:text-6xl">
-              Buy food now,
-              <br />
-              <span className="text-primary">pay later.</span>
-            </h1>
-            <p className="mt-6 max-w-md text-lg text-text-medium">
-              Apply for a credit limit in minutes, spend it on groceries today, and pay it back on
-              a plan that fits your payday.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/apply"
-                className="rounded-[var(--radius-sm)] bg-primary px-6 py-3.5 text-base font-semibold text-white shadow-[var(--shadow-card)] transition-colors hover:bg-primary-dark"
-              >
-                Apply for a credit limit
-              </Link>
-              <Link
-                href="/marketplace"
-                className="rounded-[var(--radius-sm)] border-2 border-gold px-6 py-3.5 text-base font-semibold text-gold-dark transition-colors hover:bg-gold/10"
-              >
-                See what you can buy
-              </Link>
-            </div>
-            <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3">
-              {TRUST_POINTS.map(({ icon: Icon, label }) => (
-                <div key={label} className="flex items-center gap-2 text-sm text-text-medium">
-                  <Icon className="h-4 w-4 shrink-0 text-primary" />
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Layered visual: a product photo card behind a floating brand
-              card, both slightly rotated — the "fancy, not generic" bit. */}
-          <div className="relative mx-auto h-80 w-full max-w-sm lg:h-96">
-            <div className="absolute inset-x-6 top-0 h-full -rotate-3 overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-card)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/products/big-bull-rice-50kg.jpg"
-                alt="Bag of rice"
-                className="h-full w-full object-cover"
-              />
-            </div>
-            <div
-              className="absolute bottom-0 left-0 w-64 rotate-3 rounded-[var(--radius-lg)] p-5 text-white shadow-[var(--shadow-card)]"
-              style={{ background: "var(--gradient-credit-card)" }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wide text-white/70">
-                  Farmer Market
-                </span>
-                <WalletIcon className="h-5 w-5 text-white/80" />
-              </div>
-              <p className="mt-4 text-lg font-bold">Food Credit</p>
-              <p className="mt-1 text-sm text-white/70">Pay Next Salary · 0% fee</p>
-            </div>
-          </div>
-        </div>
-      </section>
+    <main className="flex min-h-screen flex-col bg-[#f4f5f6]">
+      <HomeStorefront />
 
       {/* How it works */}
-      <section id="how-it-works" className="w-full bg-surface px-6 py-24">
+      <section id="how-it-works" className="scroll-mt-40 w-full bg-surface px-6 py-12">
         <div className="mx-auto max-w-5xl">
-          <p className="text-center text-sm font-bold uppercase tracking-wide text-primary">The loop</p>
+          <p className="text-center text-sm font-bold uppercase tracking-wide text-primary">Grocery credit</p>
           <h2 className="mt-2 text-center text-3xl font-bold tracking-tight text-text-dark sm:text-4xl">
             How it works
           </h2>
@@ -208,38 +127,20 @@ export default async function MarketingHome() {
             ))}
           </div>
 
-          <div className="mt-16 overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-card)]">
+          <div className="mx-auto mt-8 max-w-sm overflow-hidden rounded-[var(--radius-lg)] shadow-[var(--shadow-card)]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://res.cloudinary.com/hr9pb13k/image/upload/v1787880745/Promo_image1.png"
               alt="Farmer Market — buy food now, pay later"
-              className="h-auto w-full object-cover"
+              className="max-h-80 w-full object-contain"
             />
           </div>
         </div>
       </section>
 
-      {/* Shop by category — real product photography, links out. */}
-      <section className="w-full px-6 py-24">
-        <div className="mx-auto max-w-5xl">
-          <h2 className="text-center text-3xl font-bold tracking-tight text-text-dark sm:text-4xl">
-            What you can buy
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-center text-text-medium">
-            Real staples, published straight from the Farmer Market dashboard.
-          </p>
-          <FeaturedProducts />
-          <div className="mt-8 text-center">
-            <Link href="/marketplace" className="text-sm font-semibold text-primary hover:underline">
-              See the full marketplace →
-            </Link>
-          </div>
-        </div>
-      </section>
-
       {/* Plan comparison — real data from /v1/catalog/bnpl-plans */}
-      {plans.length > 0 && (
-        <section id="plans" className="w-full bg-surface px-6 py-24">
+      {plans.length > 0 ? (
+        <section id="plans" className="scroll-mt-40 w-full bg-surface px-6 py-12">
           <div className="mx-auto max-w-5xl">
             <h2 className="text-center text-3xl font-bold tracking-tight text-text-dark sm:text-4xl">
               Pick a plan that fits your payday
@@ -286,10 +187,10 @@ export default async function MarketingHome() {
             </div>
           </div>
         </section>
-      )}
+      ) : <section id="plans" className="scroll-mt-40 px-6 py-12 text-center"><h2 className="text-2xl font-bold">Payment plans</h2><p className="mt-3 text-text-medium">Payment plans are temporarily unavailable. Please check back before choosing your repayment option.</p></section>}
 
       {/* FAQ */}
-      <section className="w-full px-6 py-24">
+      <section id="help" className="w-full scroll-mt-40 px-6 py-12">
         <div className="mx-auto max-w-2xl">
           <h2 className="text-center text-3xl font-bold tracking-tight text-text-dark sm:text-4xl">
             Frequently asked questions
