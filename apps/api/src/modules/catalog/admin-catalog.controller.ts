@@ -1,4 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Patch, UseGuards, UseInterceptors, UploadedFile } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { uploadCatalogImage } from "../../common/cloudinary";
+import { validateCatalogImage } from "./catalog-image";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -30,6 +33,13 @@ import {
 @Roles("super_admin", "admin")
 export class AdminCatalogController {
   constructor(private readonly catalogService: CatalogService) {}
+
+  @Post("images")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  uploadImage(@UploadedFile() file?: { buffer: Buffer; mimetype: string; size: number }) {
+    validateCatalogImage(file);
+    return uploadCatalogImage(file!.buffer);
+  }
 
   @Get("ping")
   ping(@CurrentStaff() staff: AuthenticatedStaff) {

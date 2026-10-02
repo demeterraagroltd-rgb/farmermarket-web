@@ -8,6 +8,7 @@ import { PageHeader, Card, EmptyState } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
 import { Input, Select } from "../../../../components/ui/Field";
+import { CatalogImageInput } from "../../../../components/admin/CatalogImageInput";
 import { PlusIcon, BoxIcon } from "../../../../components/ui/icons";
 
 interface Category {
@@ -64,16 +65,18 @@ function ProductFields({
   set,
   categories,
   brands,
+  onBusyChange,
 }: {
   form: typeof EMPTY_PRODUCT;
   set: (updater: (f: typeof EMPTY_PRODUCT) => typeof EMPTY_PRODUCT) => void;
   categories: Category[];
   brands: Brand[];
+  onBusyChange: (busy: boolean) => void;
 }) {
   return (
     <>
       <Input label="Product name" value={form.name} onChange={(e) => set((f) => ({ ...f, name: e.target.value }))} required />
-      <Input label="Image URL" placeholder="https://res.cloudinary.com/..." value={form.imageUrl} onChange={(e) => set((f) => ({ ...f, imageUrl: e.target.value }))} required />
+      <CatalogImageInput value={form.imageUrl} onChange={(url) => set((f) => ({ ...f, imageUrl: url }))} onBusyChange={onBusyChange} required />
       <Input type="number" label="Price, ₦" value={form.priceNaira} onChange={(e) => set((f) => ({ ...f, priceNaira: e.target.value }))} min={1} required />
       <Input type="number" label="Discount price, ₦ (optional)" value={form.discountNaira} onChange={(e) => set((f) => ({ ...f, discountNaira: e.target.value }))} min={0} />
       <Select label="Category" value={form.categoryId} onChange={(e) => set((f) => ({ ...f, categoryId: e.target.value }))} required>
@@ -248,6 +251,8 @@ export default function CatalogPage() {
 
   async function createProduct(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
+    if (!productForm.imageUrl) { setError("Upload a product image before saving."); return; }
     setBusy(true);
     setError(null);
     try {
@@ -280,6 +285,7 @@ export default function CatalogPage() {
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     if (!editingId) return;
     setBusy(true);
     setError(null);
@@ -359,7 +365,7 @@ export default function CatalogPage() {
           <form onSubmit={createBrand} className="mt-3 flex flex-col gap-2">
             <Input placeholder="Name — e.g. Big Bull" value={brandForm.name} onChange={(e) => setBrandForm((f) => ({ ...f, name: e.target.value }))} required />
             <Input placeholder="Tagline (optional)" value={brandForm.tagline} onChange={(e) => setBrandForm((f) => ({ ...f, tagline: e.target.value }))} />
-            <Input placeholder="Image URL (optional)" value={brandForm.imagePath} onChange={(e) => setBrandForm((f) => ({ ...f, imagePath: e.target.value }))} />
+            <CatalogImageInput value={brandForm.imagePath} onChange={(url) => setBrandForm((f) => ({ ...f, imagePath: url }))} onBusyChange={setBusy} />
             <div className="flex gap-2">
               <Input placeholder="#1A7A4C" value={brandForm.color} onChange={(e) => setBrandForm((f) => ({ ...f, color: e.target.value }))} />
               <Button type="submit" disabled={busy} variant="secondary" className="px-3">
@@ -406,7 +412,7 @@ export default function CatalogPage() {
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-text-dark">Add a product</h2>
         <form onSubmit={createProduct} className="mt-4 grid grid-cols-3 gap-4">
-          <ProductFields form={productForm} set={setProductForm} categories={categories} brands={brands} />
+          <ProductFields form={productForm} set={setProductForm} categories={categories} brands={brands} onBusyChange={setBusy} />
           <div className="col-span-3 flex justify-end border-t border-dark-border/60 pt-4">
             <Button type="submit" disabled={busy}>
               <PlusIcon className="h-4 w-4" />
@@ -461,7 +467,7 @@ export default function CatalogPage() {
                 </div>
                 {editingId === p.id && (
                   <form onSubmit={saveEdit} className="mt-3 grid grid-cols-1 gap-3 border-t border-dark-border/60 pt-3">
-                    <ProductFields form={editForm} set={setEditForm} categories={categories} brands={brands} />
+                    <ProductFields form={editForm} set={setEditForm} categories={categories} brands={brands} onBusyChange={setBusy} />
                     <Button type="submit" disabled={busy} className="w-full">Save changes</Button>
                   </form>
                 )}
@@ -476,7 +482,7 @@ export default function CatalogPage() {
         <p className="mt-1 text-xs text-text-muted">The carousel on the app home screen and marketplace.</p>
         <form onSubmit={createBanner} className="mt-4 grid grid-cols-3 gap-4">
           <Input label="Brand" value={bannerForm.brand} onChange={(e) => setBannerForm((f) => ({ ...f, brand: e.target.value }))} required />
-          <Input label="Image URL" placeholder="https://res.cloudinary.com/..." value={bannerForm.imageUrl} onChange={(e) => setBannerForm((f) => ({ ...f, imageUrl: e.target.value }))} required />
+          <CatalogImageInput value={bannerForm.imageUrl} onChange={(url) => setBannerForm((f) => ({ ...f, imageUrl: url }))} onBusyChange={setBusy} required />
           <Input label="Tagline" value={bannerForm.tagline} onChange={(e) => setBannerForm((f) => ({ ...f, tagline: e.target.value }))} />
           <Select label="Category" value={bannerForm.categoryId} onChange={(e) => setBannerForm((f) => ({ ...f, categoryId: e.target.value }))}>
             <option value="">None</option>

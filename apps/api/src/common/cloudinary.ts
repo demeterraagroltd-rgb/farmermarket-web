@@ -21,6 +21,17 @@ export interface UploadedAsset {
   format?: string;
 }
 
+/** Public catalog photos; kept separate from authenticated KYC assets. */
+export function uploadCatalogImage(buffer: Buffer): Promise<{ imageUrl: string }> {
+  ensureConfigured();
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream({ folder: "farmermarket/catalog", resource_type: "image", type: "upload" }, (err, result) => {
+      if (err || !result) return reject(err ?? new Error("Image upload failed"));
+      resolve({ imageUrl: result.secure_url });
+    }).end(buffer);
+  });
+}
+
 /**
  * Uploads a buffer as a private ("authenticated") asset — never publicly
  * reachable by URL. Staff read it through {@link signedDownloadUrl}.
