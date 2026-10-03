@@ -11,3 +11,6 @@ export * from "./inbox.js";
 export * from "./mono.js";
 export * from "./direct-debit.js";
 export * from "./bundles.js";
+export * from "./inventory.js";
+export * from "./warehouses.js";
+export * from "./purchasing.js";

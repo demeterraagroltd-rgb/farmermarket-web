@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, getRole, getStaffEmail, type StaffRole } from "../../lib/auth";
-import { Badge } from "../../components/ui/Badge";
 import { CommandPalette } from "../../components/site/CommandPalette";
 import {
   GridIcon,
@@ -34,6 +33,8 @@ const NAV: Array<{ href: string; label: string; icon: typeof GridIcon; roles: St
   { href: "/dashboard/customers", label: "Customers", icon: PeopleIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/kyc", label: "Verification", icon: BadgeCheckIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/bundles", label: "Bundles", icon: BoxIcon, roles: ["super_admin", "admin"] },
+  { href: "/dashboard/inventory", label: "Inventory", icon: BoxIcon, roles: ["super_admin", "admin"] },
+  { href: "/dashboard/purchasing", label: "Purchasing", icon: DocumentIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/catalog", label: "Catalog", icon: BoxIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/pickup-centers", label: "Pickup centres", icon: MapPinIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/orders", label: "Orders", icon: DocumentIcon, roles: ["super_admin", "admin", "credit"] },
@@ -49,112 +50,45 @@ const ROLE_LABEL: Record<StaffRole, string> = {
   sales: "Sales",
 };
 
-const ROLE_TONE: Record<StaffRole, "gold" | "info" | "success" | "neutral"> = {
-  super_admin: "gold",
-  admin: "info",
-  credit: "success",
-  sales: "neutral",
-};
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [role, setRole] = useState<StaffRole | null>(null);
   const [email, setEmail] = useState<string | null>(null);
-
-  // Read from localStorage only after mount — reading it during the first
-  // render would disagree with the server-rendered markup (which has no
-  // localStorage) and trip a hydration mismatch.
-  useEffect(() => {
-    setRole(getRole());
-    setEmail(getStaffEmail());
-  }, []);
-
-  function handleLogout() {
-    clearToken();
-    router.push("/login");
-  }
-
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { setRole(getRole()); setEmail(getStaffEmail()); }, []);
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
   const visibleNav = NAV.filter((item) => !role || item.roles.includes(role));
   const isLocalApi = process.env.NEXT_PUBLIC_API_URL?.includes("localhost") ?? false;
-
-  return (
-    <div className="flex min-h-screen bg-off-white">
-      <CommandPalette nav={NAV} />
-      <aside className="flex w-64 shrink-0 flex-col border-r border-dark-border/60 bg-white px-4 py-6">
-        <div className="flex items-center gap-2.5 px-2">
-          <Image src="/icon.png" alt="" width={32} height={32} className="rounded-[var(--radius-sm)] shadow-[var(--shadow-card)]" />
-          <div>
-            <p className="text-sm font-bold leading-tight text-text-dark">Farmer Market</p>
-            <p className="text-[11px] leading-tight text-text-muted">Operations</p>
-          </div>
+  function logout() { clearToken(); router.push("/login"); }
+  return <div className="dashboard-theme min-h-screen">
+    <CommandPalette nav={NAV} />
+    {menuOpen && <button className="fixed inset-0 z-30 bg-black/35 lg:hidden" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
+    <aside className={`dashboard-sidebar fixed inset-y-0 left-0 z-40 flex w-[272px] flex-col px-4 py-7 transition-transform lg:translate-x-0 ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <Link href="/dashboard/overview" className="mb-7 flex items-center gap-3 px-2">
+        <Image src="/icon.png" alt="" width={38} height={38} className="rounded-xl" />
+        <div><p className="text-xl font-bold tracking-tight text-white">Farmer<span className="text-[#59d87b]"> Market</span></p><p className="mt-1 text-[11px] text-emerald-100/70">Fresh food. Better tomorrow.</p></div>
+      </Link>
+      <button className="sidebar-search mb-6 flex items-center justify-between gap-2 rounded-xl px-3 py-3 text-xs" onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))}>
+        <span>⌕ &nbsp; Quick search…</span><kbd className="rounded bg-white/10 px-2 py-1 text-[10px]">Ctrl + K</kbd>
+      </button>
+      <nav aria-label="Dashboard navigation" className="space-y-1 overflow-y-auto">{visibleNav.map(({ href, label, icon: Icon }) => {
+        const active = pathname === href || pathname?.startsWith(href + "/");
+        return <Link key={href} href={href} aria-current={active ? "page" : undefined} className={`sidebar-link flex items-center gap-3 rounded-xl px-4 py-3 text-sm ${active ? "sidebar-link-active font-semibold" : "text-white/90"}`}><Icon className="h-6 w-6 shrink-0" />{label}</Link>;
+      })}</nav>
+      <div className="sidebar-message relative mt-auto overflow-hidden rounded-2xl border border-emerald-400/20 p-5"><span aria-hidden="true" className="text-3xl">❧</span><p className="mt-3 max-w-36 text-sm font-semibold leading-5 text-white">Good food builds stronger communities.</p></div>
+      <button onClick={logout} className="mt-4 flex items-center gap-3 px-4 py-2 text-xs text-white/70 hover:text-white"><LogOutIcon className="h-4 w-4" />Log out</button>
+    </aside>
+    <div className="min-w-0 lg:pl-[272px]">
+      <header className="dashboard-topbar flex h-[76px] items-center justify-between gap-4 px-5 sm:px-10">
+        <button onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen} aria-label="Toggle navigation" className="rounded-lg border border-slate-200 px-3 py-2 lg:hidden">☰</button>
+        <span className="hidden text-xs text-slate-500 sm:block">Farmer Market Operations</span>
+        <div className="ml-auto flex items-center gap-5">{role && ["admin", "super_admin"].includes(role) && <Link href="/dashboard/inbox" aria-label="Open inbox" className="rounded-full p-2 text-slate-700 hover:bg-emerald-50"><InboxIcon className="h-6 w-6" /></Link>}
+          <div className="flex items-center gap-3"><div className="staff-avatar flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white">{(email ?? "A").slice(0,2).toUpperCase()}</div><div className="hidden sm:block"><p className="text-xs font-semibold text-slate-900">{email ?? "Staff account"}</p><p className="mt-1 text-xs text-slate-500">{role ? ROLE_LABEL[role] : "Staff"}</p></div></div>
         </div>
-
-        <p className="mt-6 flex items-center justify-between rounded-[var(--radius-sm)] bg-surface px-3 py-1.5 text-[11px] text-text-muted">
-          Quick search
-          <kbd className="rounded border border-dark-border/60 bg-white px-1.5 py-0.5 font-mono text-[10px]">
-            ⌘K
-          </kbd>
-        </p>
-
-        <nav className="mt-3 flex flex-col gap-1">
-          {visibleNav.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/dashboard" && href !== "/dashboard/overview" && pathname?.startsWith(href));
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={`flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-primary text-white shadow-[var(--shadow-card)]"
-                    : "text-text-medium hover:bg-surface"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* A real gap in the product, shown honestly rather than hidden:
-            sales has no dashboard section of its own yet (§11.4's "own
-            pipeline and conversion" isn't built). Nav still lands them on
-            Overview, which explains this rather than 403ing silently. */}
-        {role === "sales" && (
-          <p className="mt-4 rounded-[var(--radius-sm)] bg-surface px-3 py-2 text-xs text-text-muted">
-            Applications, Customers and Catalog aren&apos;t open to Sales accounts yet.
-          </p>
-        )}
-
-        <div className="mt-auto flex flex-col gap-3 border-t border-dark-border/60 pt-4">
-          <div className="flex items-center gap-2.5 px-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-surface text-xs font-bold text-primary-dark">
-              {(email ?? "?")[0]?.toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-text-dark">{email ?? "—"}</p>
-              {role && <Badge tone={ROLE_TONE[role]}>{ROLE_LABEL[role]}</Badge>}
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-sm font-medium text-text-medium hover:bg-surface hover:text-error"
-          >
-            <LogOutIcon className="h-5 w-5" />
-            Log out
-          </button>
-        </div>
-      </aside>
-
-      <div className="flex flex-1 flex-col">
-        {isLocalApi && (
-          <div className="bg-warning/15 px-10 py-1.5 text-center text-xs font-semibold text-warning">
-            Local development — talking to a local API
-          </div>
-        )}
-        <div className="flex-1 px-10 py-8">{children}</div>
-      </div>
+      </header>
+      {isLocalApi && <div className="border-b border-emerald-100 bg-emerald-50/60 px-5 py-1 text-[10px] text-emerald-800 sm:px-10">Local preview · connected to the local API</div>}
+      <main className="dashboard-content min-w-0 px-4 py-7 sm:px-8 xl:px-10">{children}</main>
     </div>
-  );
+  </div>;
 }

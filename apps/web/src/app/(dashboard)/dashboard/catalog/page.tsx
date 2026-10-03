@@ -66,12 +66,14 @@ function ProductFields({
   categories,
   brands,
   onBusyChange,
+  editing = false,
 }: {
   form: typeof EMPTY_PRODUCT;
   set: (updater: (f: typeof EMPTY_PRODUCT) => typeof EMPTY_PRODUCT) => void;
   categories: Category[];
   brands: Brand[];
   onBusyChange: (busy: boolean) => void;
+  editing?: boolean;
 }) {
   return (
     <>
@@ -92,7 +94,7 @@ function ProductFields({
         ))}
       </Select>
       <Input label="Unit" placeholder="e.g. 50kg bag" value={form.unit} onChange={(e) => set((f) => ({ ...f, unit: e.target.value }))} required />
-      <Input type="number" label="Stock" value={form.stockQuantity} onChange={(e) => set((f) => ({ ...f, stockQuantity: e.target.value }))} min={0} />
+      <Input disabled={editing} type="number" label={editing ? "Available stock — manage in Inventory" : "Initial stock"} value={form.stockQuantity} onChange={(e) => set((f) => ({ ...f, stockQuantity: e.target.value }))} min={0} />
       <Input label="Tags (comma-separated)" placeholder="rice, big bull, 50kg" value={form.tags} onChange={(e) => set((f) => ({ ...f, tags: e.target.value }))} />
       <Select label="Status" value={form.status} onChange={(e) => set((f) => ({ ...f, status: e.target.value }))}>
         <option value="draft">Draft</option>
@@ -299,7 +301,7 @@ export default function CatalogPage() {
     try {
       const res = await apiFetch(`/v1/admin/catalog/products/${editingId}`, {
         method: "PATCH",
-        body: JSON.stringify(productPayload(editForm)),
+        body: JSON.stringify({ ...productPayload(editForm), stockQuantity: undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Failed to update product");
@@ -474,7 +476,7 @@ export default function CatalogPage() {
                 </div>
                 {editingId === p.id && (
                   <form onSubmit={saveEdit} className="mt-3 grid grid-cols-1 gap-3 border-t border-dark-border/60 pt-3">
-                    <ProductFields form={editForm} set={setEditForm} categories={categories} brands={brands} onBusyChange={setBusy} />
+                    <ProductFields editing form={editForm} set={setEditForm} categories={categories} brands={brands} onBusyChange={setBusy} />
                     <Button type="submit" disabled={busy} className="w-full">Save changes</Button>
                   </form>
                 )}

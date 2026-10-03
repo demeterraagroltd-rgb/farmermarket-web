@@ -127,6 +127,41 @@
       "when": 1790905735155,
       "tag": "0017_true_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791013093626,
+      "tag": "0018_clumsy_juggernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791030963197,
+      "tag": "0019_superb_norman_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791031515004,
+      "tag": "0020_dapper_franklin_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791052177028,
+      "tag": "0021_exotic_korg",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791052701175,
+      "tag": "0022_majestic_demogoblin",
+      "breakpoints": true
     }
   ]
 }

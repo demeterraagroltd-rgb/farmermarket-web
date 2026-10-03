@@ -1,4 +1,8 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post } from "@nestjs/common";
+import { z } from 'zod';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { createOrderItemSchema, type CreateOrderInput } from '../orders/dto/create-order.dto';
+const availabilitySchema=z.object({warehouseId:z.string().uuid(),items:z.array(createOrderItemSchema).min(1).max(100)});
 import { ApiTags } from "@nestjs/swagger";
 import { BundlesService } from "./bundles.service";
 import { CatalogService } from "./catalog.service";
@@ -9,6 +13,7 @@ import { CatalogService } from "./catalog.service";
 @Controller("catalog")
 export class CatalogController {
   constructor(private readonly catalogService: CatalogService, private readonly bundlesService: BundlesService) {}
+  @Post('availability') availability(@Body(new ZodValidationPipe(availabilitySchema)) input:{warehouseId:string;items:CreateOrderInput['items']}){return this.catalogService.cartAvailability(input.warehouseId,input.items);}
 
   @Get("bundles")
   listBundles() { return this.bundlesService.list(true); }

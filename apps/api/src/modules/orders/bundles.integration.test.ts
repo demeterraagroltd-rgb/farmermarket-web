@@ -1,11 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { brands, categories, products, bundles, bundleItems, users, staff, orders, bnplPlans, pickupCenters, type Db } from "@farmermarket/db";
+import { brands, categories, products, bundles, bundleItems, users, staff, orders, bnplPlans, pickupCenters, warehouseStocks, type Db } from "@farmermarket/db";
 import { createTestDb, type TestDb } from "../../test/test-db";
 import { OrdersService } from "./orders.service";
 import { BundlesService } from "../catalog/bundles.service";
 import { bundleSchema } from "../catalog/dto/bundle.dto";
 import { createOrderItemSchema } from "./dto/create-order.dto";
+import { InventoryService } from "../inventory/inventory.service";
+import { WarehousesService } from '../inventory/warehouses.service';
+import { CatalogService } from '../catalog/catalog.service';
+import {randomUUID} from 'node:crypto';
 
 describe("Bundles through real order SQL and migrations", () => {
   let t: TestDb; let db: Db; let service: OrdersService; let catalog: BundlesService;
@@ -30,9 +34,11 @@ describe("Bundles through real order SQL and migrations", () => {
   }, 20000);
   afterAll(async () => t?.close());
   beforeEach(async () => {
+    await db.update(warehouseStocks).set({available:0,reserved:0});
     await db.update(products).set({ stockQuantity: 10, status: "published", isAvailable: true }).where(eq(products.id, rice));
     await db.update(products).set({ stockQuantity: 10, status: "published", isAvailable: true, priceKobo: 50000n }).where(eq(products.id, oil));
     await db.update(bundles).set({ active: true, bundlePriceKobo: 170000n }).where(eq(bundles.id, bundle));
+    await db.insert(warehouseStocks).values([{productId:rice,warehouseId:centre,available:10},{productId:oil,warehouseId:centre,available:10}]).onConflictDoUpdate({target:[warehouseStocks.productId,warehouseStocks.warehouseId],set:{available:10,reserved:0}});
   });
   const input = (items: { productId?: string; bundleId?: string; quantity: number }[]) => ({ items, pickupCenterId: centre, pickupDate: new Date(), bnplPlanId: plan, txnPin: "1234" });
   const stock = async (id: string) => (await db.select().from(products).where(eq(products.id, id)))[0].stockQuantity;
@@ -41,7 +47,10 @@ describe("Bundles through real order SQL and migrations", () => {
     const view = await catalog.findBySlug("kitchen");
     expect(view.regularPrice).toBe(1900); expect(view.bundlePrice).toBe(1700); expect(view.savings).toBe(200);
     expect(view.availableQuantity).toBe(5); expect(view.isAvailable).toBe(true);
-    await db.update(products).set({ priceKobo: 60000n, stockQuantity: 1 }).where(eq(products.id, oil));
+    await db.transaction(async tx=>{
+      await tx.update(products).set({ priceKobo: 60000n, stockQuantity: 1 }).where(eq(products.id, oil));
+      await tx.update(warehouseStocks).set({available:1}).where(eq(warehouseStocks.productId,oil));
+    });
     const changed = await catalog.findBySlug("kitchen"); expect(changed.regularPrice).toBe(2100); expect(changed.savings).toBe(400); expect(changed.isAvailable).toBe(false);
   });
   it("keeps one bundle line, multiplies components, aggregates mixed stock, and snapshots prices", async () => {
@@ -49,6 +58,11 @@ describe("Bundles through real order SQL and migrations", () => {
     expect(placed.items).toHaveLength(2); expect(placed.items[0].bundleId).toBe(bundle); expect(placed.items[0].unitPrice).toBe(1700);
     expect(placed.items[0].components.find((i) => i.productId === oil)?.totalQuantity).toBe(4);
     expect(placed.subtotal).toBe(3900); expect(await stock(oil)).toBe(5); expect(await stock(rice)).toBe(8);
+    const inventory = new InventoryService(db);
+    const oilStock = (await inventory.overview()).products.find(p => p.id === oil)!;
+    expect(oilStock.available).toBe(5); expect(oilStock.reserved).toBeGreaterThanOrEqual(5);
+    expect(oilStock.onHand).toBe(oilStock.available + oilStock.reserved);
+    expect((await inventory.history(oil)).items.find(m => m.orderId === placed.id)).toMatchObject({ kind: "reservation", availableDelta: -5, reservedDelta: 5 });
     await db.update(bundles).set({ name: "Renamed", bundlePriceKobo: 180000n }).where(eq(bundles.id, bundle));
     await db.update(products).set({ priceKobo: 70000n }).where(eq(products.id, oil));
     const history = await service.findOneForUser(userId, placed.id);
@@ -61,6 +75,14 @@ describe("Bundles through real order SQL and migrations", () => {
     await expect(service.create(userId, input([{ bundleId: bundle, quantity: 5 }, { productId: oil, quantity: 1 }]))).rejects.toThrow("Not enough stock");
     expect(await stock(oil)).toBe(10); expect(await stock(rice)).toBe(10); expect((await db.select().from(orders)).length).toBe(before);
   });
+  it('checks shared bundle components against the selected warehouse',async()=>{
+    const [other]=await db.insert(pickupCenters).values({name:'Other warehouse',address:'Other'}).returning();
+    await new WarehousesService(db).post('transfer',{productId:oil,warehouseId:centre,destinationId:other.id,quantity:8,reason:'Relocate oil stock',reference:'',operationId:randomUUID()},staffId);
+    const before=(await db.select().from(orders)).length;
+    await expect(service.create(userId,input([{bundleId:bundle,quantity:1},{productId:oil,quantity:1}]))).rejects.toThrow('Not enough stock');
+    expect(await stock(oil)).toBe(10);expect((await db.select().from(orders)).length).toBe(before);
+    const preview=await new CatalogService(db).cartAvailability(centre,[{bundleId:bundle,quantity:1},{productId:oil,quantity:1}]);expect(preview.shortages.find(s=>s.productId===oil)).toMatchObject({required:3,available:2});
+  });
   it("rejects inactive or unpublished components", async () => {
     await db.update(products).set({ status: "draft" }).where(eq(products.id, oil));
     await expect(service.create(userId, input([{ bundleId: bundle, quantity: 1 }]))).rejects.toThrow("not available");
@@ -72,6 +94,7 @@ describe("Bundles through real order SQL and migrations", () => {
     await db.update(bundleItems).set({ quantity: 3 }).where(eq(bundleItems.productId, oil));
     await service.reject(placed.id, staffId, "Not approved");
     expect(await stock(oil)).toBe(10); expect(await stock(rice)).toBe(10);
+    expect((await new InventoryService(db).history(oil)).items.find(m => m.orderId === placed.id && m.kind === "release")).toMatchObject({ availableDelta: 4, reservedDelta: -4, actorStaffId: staffId });
     await expect(service.reject(placed.id, staffId, "Again")).rejects.toThrow("already rejected");
     expect(await stock(oil)).toBe(10);
     await db.update(bundleItems).set({ quantity: 2 }).where(eq(bundleItems.productId, oil));
@@ -86,6 +109,15 @@ describe("Bundles through real order SQL and migrations", () => {
   it("rolls back inventory if a later checkout validation fails", async () => {
     await expect(service.create(userId, { ...input([{ bundleId: bundle, quantity: 1 }]), bnplPlanId: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow("Selected plan");
     expect(await stock(oil)).toBe(10);
+  });
+  it("delivery clears reservations without deducting available stock twice", async () => {
+    const placed = await service.create(userId, input([{ bundleId: bundle, quantity: 1 }]));
+    await db.update(orders).set({ status: "preparing" }).where(eq(orders.id, placed.id));
+    await service.updateStatus(placed.id, "delivered", staffId);
+    expect(await stock(oil)).toBe(8);
+    expect((await db.select().from(orders).where(eq(orders.id, placed.id)))[0].stockReserved).toBe(false);
+    expect((await new InventoryService(db).history(oil)).items.find(m => m.orderId === placed.id && m.kind === "fulfilment")).toMatchObject({ availableDelta: 0, reservedDelta: -2, actorStaffId: staffId });
+    await expect(service.updateStatus(placed.id, "delivered", staffId)).rejects.toThrow("already closed");
   });
   it("allows drafts but prevents publishing missing image/mapping/invalid savings", async () => {
     const base = bundleSchema.parse({ name: "Draft", slug: "draft", items: [{ productId: rice, quantity: 1 }], bundlePrice: 800 });

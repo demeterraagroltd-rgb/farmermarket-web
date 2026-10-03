@@ -52,6 +52,14 @@ export default function CheckoutPage() {
   const [pinConfirm, setPinConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  const [availability,setAvailability]=useState<{warehouseId:string;available:boolean;issues:string[];shortages:{name:string;required:number;available:number}[]}|null>(null);
+  const [availabilityError,setAvailabilityError]=useState('');
+  useEffect(()=>{
+    let active=true;setAvailability(null);setAvailabilityError('');
+    if(!pickupCenterId||!lines.length)return;
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/catalog/availability`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({warehouseId:pickupCenterId,items:lines.map(l=>({...(l.product.kind==='bundle'?{bundleId:l.product.id}:{productId:l.product.id}),quantity:l.quantity}))})}).then(async r=>{const b=await r.json();if(!r.ok)throw new Error(typeof b.message==='string'?b.message:'Unable to check pickup stock');return b;}).then(b=>{if(active)setAvailability(b);}).catch(e=>{if(active)setAvailabilityError(e.message);});
+    return()=>{active=false;};
+  },[pickupCenterId,lines]);
 
   useEffect(() => {
     const current = getCustomerSession();
@@ -109,6 +117,9 @@ export default function CheckoutPage() {
     if (!pickupCenterId) {
       setError("Choose where you'll collect your order.");
       return;
+    }
+    if (!availability||availability.warehouseId!==pickupCenterId||!availability.available) {
+      setError(availabilityError||"Some items are unavailable at this pickup location. Choose another location or change your cart.");return;
     }
     if (!pickupDate) {
       setError("Choose a pickup date.");
@@ -200,6 +211,7 @@ export default function CheckoutPage() {
               onChange={(e) => setPickupDate(e.target.value)}
               required
             />
+            {pickupCenterId && <div role="status" className="mt-3 text-sm">{availabilityError ? <p className="text-error">{availabilityError}</p> : !availability ? <p>Checking stock at this pickup location…</p> : availability.available ? <p className="text-primary">Your items are available at this pickup location.</p> : <div className="text-error"><p>Some items are unavailable here:</p>{availability.issues.map((issue,i)=><p key={i}>{issue}</p>)}{availability.shortages.map(item=><p key={item.name}>{item.name}: {item.available} available, {item.required} needed.</p>)}<p>Choose another pickup location or change your cart.</p></div>}</div>}
             {selectedCenter && (
               <p className="text-xs text-text-muted sm:col-span-2">{selectedCenter.address}</p>
             )}

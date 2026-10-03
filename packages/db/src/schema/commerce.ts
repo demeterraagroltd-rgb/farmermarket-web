@@ -68,6 +68,8 @@ export const orders = pgTable(
     deliverySlot: text("delivery_slot"), // human string shown to the buyer, e.g. "Tue 3 Sep, 9am–12pm"
     rejectionReason: text("rejection_reason"),
     stockReserved: boolean("stock_reserved").notNull().default(false),
+    // Null retains the unallocated reservation of an order placed before warehouses.
+    stockWarehouseId: uuid("stock_warehouse_id").references(() => pickupCenters.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -73,7 +73,8 @@ export class AdminOrdersController {
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateStatusSchema))
     body: { status: "preparing" | "on_the_way" | "delivered" | "cancelled" },
+    @CurrentStaff() actor: AuthenticatedStaff,
   ) {
-    return this.ordersService.updateStatus(id, body.status);
+    return this.ordersService.updateStatus(id, body.status, actor.staffId);
   }
 }

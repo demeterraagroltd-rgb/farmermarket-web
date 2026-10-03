@@ -19,6 +19,7 @@ import { AuthService } from "../auth/auth.service";
 import { KycService } from "../kyc/kyc.service";
 import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
+import { recordOrderReservation, recordOrderFulfilment } from "../inventory/inventory-stock";
 import { reserveOrderLines, releaseOrderStock } from "./order-inventory";
 import type { CreateOrderInput } from "./dto/create-order.dto";
 
@@ -136,7 +137,7 @@ export class OrdersService {
   // Post-approval lifecycle only (preparing → on_the_way → delivered,
   // cancelled). Entering `confirmed`/`rejected` goes through approve()/reject();
   // `pending_approval` is only ever set at creation.
-  async updateStatus(orderId: string, status: (typeof orders.status.enumValues)[number]) {
+  async updateStatus(orderId: string, status: (typeof orders.status.enumValues)[number], actorStaffId?: string) {
     if (["pending_approval", "confirmed", "rejected"].includes(status)) {
       throw new BadRequestException("Use the approve / reject actions for this transition");
     }
@@ -145,9 +146,14 @@ export class OrdersService {
       if (!order) throw new NotFoundException("Order not found");
       if (["rejected", "cancelled", "delivered"].includes(order.status)) throw new BadRequestException("This order is already closed");
       if (order.status === "pending_approval") throw new BadRequestException("Approve or reject the pending order first");
-      if (status === "cancelled") await releaseOrderStock(tx, order);
+      if (status === "cancelled") await releaseOrderStock(tx, order, actorStaffId);
+      if (status === "delivered" && order.stockReserved) {
+        const lines = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+        await recordOrderFulfilment(tx, orderId, lines, actorStaffId,order.stockWarehouseId);
+      }
       const [row] = await tx.update(orders).set({ status,
-        deliveredAt: status === "delivered" ? new Date() : undefined, updatedAt: new Date(),
+        deliveredAt: status === "delivered" ? new Date() : undefined,
+        ...(status === "delivered" ? { stockReserved: false } : {}), updatedAt: new Date(),
       }).where(eq(orders.id, orderId)).returning();
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
       return this.toResponse(row, items);
@@ -164,7 +170,7 @@ export class OrdersService {
     await this.kyc.assertVerified(userId); // 403 NOT_VERIFIED otherwise
 
     const response = await this.db.transaction(async (tx) => {
-      const resolvedLines = await reserveOrderLines(tx, input.items);
+      const resolvedLines = await reserveOrderLines(tx, input.items,input.pickupCenterId);
 
       const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, input.bnplPlanId)).limit(1);
       if (!plan || !plan.isActive) throw new BadRequestException("Selected plan is not available");
@@ -187,6 +193,7 @@ export class OrdersService {
           userId,
           status: "pending_approval",
           stockReserved: true,
+          stockWarehouseId:input.pickupCenterId,
           subtotalKobo,
           deliveryFeeKobo: DELIVERY_FEE_KOBO,
           serviceFeeKobo: percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT),
@@ -206,6 +213,7 @@ export class OrdersService {
         )
         .returning();
 
+      await recordOrderReservation(tx, order.id, items,input.pickupCenterId);
       return this.toResponse(order, items);
     });
 
@@ -319,7 +327,7 @@ export class OrdersService {
       const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
       if (!order) throw new NotFoundException("Order not found");
       if (order.status !== "pending_approval") throw new BadRequestException(`Order is already ${order.status}`);
-      await releaseOrderStock(tx, order);
+      await releaseOrderStock(tx, order, staffId);
       const [updated] = await tx.update(orders).set({ status: "rejected", rejectionReason: reason,
         approvedByStaffId: staffId, updatedAt: new Date() }).where(eq(orders.id, orderId)).returning();
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));

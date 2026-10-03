@@ -1,3 +1,5 @@
+import { InventoryModule } from "./modules/inventory/inventory.module";
+import { PurchasingModule } from "./modules/purchasing/purchasing.module";
 import { Module } from "@nestjs/common";
 import { DbModule } from "./db/db.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -25,6 +27,8 @@ import { MonoPaymentsModule } from "./modules/integrations/mono-payments/mono-pa
     HealthModule,
     AuthModule,
     CatalogModule,
+    InventoryModule,
+    PurchasingModule,
     ApplicationsModule,
     StaffModule,
     CustomersModule,

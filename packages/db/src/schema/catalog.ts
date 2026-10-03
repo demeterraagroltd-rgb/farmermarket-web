@@ -21,6 +21,13 @@ export const brands = pgTable("brands", {
 export const vendors = pgTable("vendors", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  contactName: text("contact_name").notNull().default(""),
+  email: text("email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  address: text("address").notNull().default(""),
+  paymentTermsDays: integer("payment_terms_days").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -54,6 +61,7 @@ export const products = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    check("product_stock_nonnegative", sql`${table.stockQuantity} >= 0`),
     check("price_positive", sql`${table.priceKobo} > 0`),
     check(
       "discount_below_price",
