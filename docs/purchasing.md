@@ -35,6 +35,7 @@ Warehouse reservations, transfers, opening allocations and physical counts are
 described in warehouses.md. Legacy opening balances remain unassigned until staff
 attribute them to their actual locations.
 
-Supplier invoice matching, payment recording and payable balances are the next
-purchasing slice. No supplier money transfers or accounting entries are posted by
-this release. The complete programme is in erp-plan.md.
+Supplier invoice matching, payment recording and payable balances are available
+under **Invoices & payments**. See supplier-payables.md for the workflow, roles,
+corrections and limits. No supplier money transfers or general-ledger entries are
+posted by this release. The complete programme is in erp-plan.md.

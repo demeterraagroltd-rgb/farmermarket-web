@@ -3,6 +3,17 @@
 Status: implementation plan, 3 October 2026. Proposed business rules below are
 starting defaults, not confirmation of current warehouse or supplier practices.
 
+Implemented slices: redesigned dashboard, inventory history, suppliers, purchase
+orders and goods receiving, pickup warehouse operations, and the first supplier
+invoice/payment subledger with supplier credit notes and reversals. See purchasing.md,
+warehouses.md and supplier-payables.md for the shipped scope and restrictions.
+Invoice discrepancies, credit settlement/allocation, advances and general-ledger
+integration below remain planned work.
+
+Global FIFO inventory valuation and collected-order COGS reporting are also
+implemented; see inventory-valuation.md. Opening costs remain unknown until
+recorded, and incomplete historical margins are explicitly withheld.
+
 ## Outcome
 
 Connect purchasing, receiving, inventory and fulfilment using the existing

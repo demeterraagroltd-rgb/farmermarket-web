@@ -162,6 +162,27 @@
       "when": 1791052701175,
       "tag": "0022_majestic_demogoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791057837086,
+      "tag": "0023_dashing_changeling",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791063831694,
+      "tag": "0024_blue_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791065515286,
+      "tag": "0025_fuzzy_magus",
+      "breakpoints": true
     }
   ]
 }
