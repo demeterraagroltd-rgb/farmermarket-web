@@ -39,6 +39,7 @@ const NAV: Array<{ href: string; label: string; icon: typeof GridIcon; roles: St
   { href: "/dashboard/pickup-centers", label: "Pickup centres", icon: MapPinIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/orders", label: "Orders", icon: DocumentIcon, roles: ["super_admin", "admin", "credit"] },
   { href: "/dashboard/repayments", label: "Repayments", icon: BankIcon, roles: ["super_admin", "admin", "credit"] },
+  { href: "/dashboard/recova", label: "Recova", icon: BankIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/inbox", label: "Inbox", icon: InboxIcon, roles: ["super_admin", "admin"] },
   { href: "/dashboard/staff", label: "Staff", icon: BadgeCheckIcon, roles: ["super_admin"] },
 ];

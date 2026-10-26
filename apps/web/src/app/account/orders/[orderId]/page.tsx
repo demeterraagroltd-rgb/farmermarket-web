@@ -9,6 +9,7 @@ import { Badge } from "../../../../components/ui/Badge";
 import { formatDate, formatDateTime, formatNairaAmount } from "../../../../lib/format";
 import { ORDER_STATUS_TONE, orderStatusLabel, pickupFieldLabel, pickupLabel } from "../../../../lib/orders";
 import { accountFetch, getCustomerSession } from "../../../../lib/customer";
+import { RecovaRepaymentCard } from "../../../../components/site/RecovaRepaymentCard";
 
 interface OrderItem {
   productId: string | null;
@@ -94,6 +95,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ orderId:
                 </Badge>
                 <span className="font-mono text-xs text-text-muted">#{order.id.slice(0, 8)}</span>
               </div>
+
+              <RecovaRepaymentCard orderId={order.id} />
 
               {order.rejectionReason && (
                 <div className="mt-4 rounded-[var(--radius-sm)] border border-error/40 bg-error/10 p-3 text-sm text-text-dark">

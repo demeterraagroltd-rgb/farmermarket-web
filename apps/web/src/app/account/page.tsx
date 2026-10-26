@@ -270,12 +270,13 @@ export default function AccountPage() {
             ) : null}
           </Card>
 
-          {/* Unlike bank linking, this one is self-serve: it's the applicant's
-              own BVN against the national record, it's part of the KYC they
-              already started, and NIBSS asks their permission anyway. Hidden
-              once a check is on file — re-running it is a reviewer's call. */}
-          {kyc && !kyc.identityChecked && !identityChecked && (
-            <BvnVerifyCard savedBvnAvailable={kyc.savedBvnAvailable} onVerified={setIdentityChecked} />
+          {/* A prior NIN check does not make a legacy hashed BVN recoverable.
+              Keep the matching-BVN re-entry flow available for those accounts. */}
+          {kyc && (!kyc.identityChecked || !kyc.savedBvnAvailable) && !identityChecked && (
+            <section id="bvn-verification" className="scroll-mt-24">
+              {!kyc.savedBvnAvailable && <p className="mt-6 text-sm text-text-medium">Please re-enter the BVN already on your application so it can be securely saved for repayment authorization. This does not replace your BVN with a different number or approve a debit mandate.</p>}
+              <BvnVerifyCard savedBvnAvailable={kyc.savedBvnAvailable} onVerified={setIdentityChecked} />
+            </section>
           )}
           {identityChecked && (
             <Card className="mt-6 p-5">

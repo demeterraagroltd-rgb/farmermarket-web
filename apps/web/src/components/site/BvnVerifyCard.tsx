@@ -202,7 +202,7 @@ export function BvnVerifyCard({ savedBvnAvailable = false, onVerified }: { saved
 
   return (
     <Card className="mt-6 p-5">
-      <p className="text-sm font-medium text-text-dark">Verify your identity</p>
+      <p className="text-sm font-medium text-text-dark">Verify your BVN</p>
       <p className="mt-1 text-xs text-text-muted">
         We check your BVN against the national record. You&apos;ll approve it with a code sent to
         the phone number linked to your BVN — we never see your banking password, and
@@ -218,6 +218,8 @@ export function BvnVerifyCard({ savedBvnAvailable = false, onVerified }: { saved
         <div className="mt-3 flex flex-col gap-3">
           {!savedBvnAvailable && <Input
             label="BVN"
+            type="password"
+            autoComplete="off"
             inputMode="numeric"
             maxLength={11}
             value={bvn}
