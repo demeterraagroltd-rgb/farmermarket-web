@@ -8,6 +8,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { productionStatus } from "./recova-production.config";
 import { requestProductionLookup } from "./recova.client";
 import { consentSetupStatus } from "./recova-consent.config";
+import { recovaReadiness } from "./recova-readiness";
 
 const reference = z.string().min(1).max(100).regex(/^[A-Za-z0-9._-]+$/, "Use a valid Recova loan reference.");
 
@@ -19,7 +20,7 @@ const reference = z.string().min(1).max(100).regex(/^[A-Za-z0-9._-]+$/, "Use a v
 export class RecovaProductionController {
   @Get("status")
   @Header("Cache-Control", "no-store")
-  status() { return { ...productionStatus(), customerSetup: consentSetupStatus() }; }
+  status() { return { ...productionStatus(), customerSetup: consentSetupStatus(), readiness: recovaReadiness() }; }
 
   @Get("mandate/:reference")
   @Header("Cache-Control", "no-store")
