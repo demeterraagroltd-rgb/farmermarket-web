@@ -11,6 +11,7 @@ import {
   debitMandates,
   monoCustomers,
   repaymentSchedules,
+  recovaConsents,
   users,
   type Db,
 } from "@farmermarket/db";
@@ -181,8 +182,13 @@ export class DirectDebitService {
    * time-boxed (a year) — never open-ended.
    */
   async startMandate(userId: string, txnPin: string, now: Date = new Date()) {
+    if (process.env.RECOVA_CONSENT_ENABLED === "true") throw new ConflictException("Recova repayment setup is in use. Do not create a second repayment mandate.");
     if (!this.isEnabled()) throw new BadRequestException("Automatic repayment isn't available yet.");
     await this.auth.assertTxnPin(userId, txnPin);
+    const [recova] = await this.db.select({ id: recovaConsents.id }).from(recovaConsents).where(and(
+      eq(recovaConsents.userId, userId), inArray(recovaConsents.status, ["submitting", "awaiting_consent", "processing", "active", "needs_review"]),
+    )).limit(1);
+    if (recova) throw new ConflictException("Resolve this customer's Recova repayment setup before creating a Mono mandate.");
 
     const existing = await this.liveMandate(userId);
     if (existing) {

@@ -1,4 +1,5 @@
 import { InventoryModule } from "./modules/inventory/inventory.module";
+import { RecovaModule } from "./modules/recova/recova.module";
 import { PurchasingModule } from "./modules/purchasing/purchasing.module";
 import { Module } from "@nestjs/common";
 import { DbModule } from "./db/db.module";
@@ -42,6 +43,7 @@ import { MonoPaymentsModule } from "./modules/integrations/mono-payments/mono-pa
     LocationsModule,
     MonoPaymentsModule,
     DirectDebitModule,
+    RecovaModule,
   ],
 })
 export class AppModule {}

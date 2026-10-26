@@ -1,0 +1,15 @@
+.git
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+**/coverage
+output
+**/output
+pgdata
+minio-data
+.neon
+secret reocva.txt

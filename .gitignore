@@ -15,3 +15,5 @@ Thumbs.db
 pgdata/
 minio-data/
 .neon
+/secret reocva.txt
+output/

@@ -16,3 +16,4 @@ export * from "./warehouses.js";
 export * from "./purchasing.js";
 export * from "./payables.js";
 export * from "./valuation.js";
+export * from "./recova.js";

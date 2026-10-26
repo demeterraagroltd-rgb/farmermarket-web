@@ -241,7 +241,7 @@ export class OrdersService {
    * Returns the buyer id + slot so the caller can send the "approved" email.
    */
   async approve(orderId: string, staffId: string, deliverySlot?: string) {
-    return this.db.transaction(async (tx) => {
+    const { updated, userId } = await this.db.transaction(async (tx) => {
       const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1).for("update");
       if (!order) throw new NotFoundException("Order not found");
       if (order.status !== "pending_approval") {
@@ -308,18 +308,22 @@ export class OrdersService {
         .where(eq(orders.id, orderId))
         .returning();
 
-      const response = await this.attachItems(updated);
-      await this.notifyBuyer(order.userId, (name) =>
-        emails.orderApproved(name, {
-          orderId,
-          total: koboToNaira(order.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
-          deliverySlot: updated.deliverySlot,
-          pickupCenter: [order.pickupCenterName, order.pickupCenterAddress].filter(Boolean).join(", "),
-          pickupDate: shortDate(order.pickupDate),
-        }),
-      );
-      return { ...response, userId: order.userId, deliverySlot: updated.deliverySlot };
+      return { updated, userId: order.userId };
     });
+    // Response hydration uses the root DB connection. Do it only after commit:
+    // a single-connection adapter cannot serve it while the transaction is open.
+    // A buyer notification must also describe a committed approval.
+    const response = await this.attachItems(updated);
+    await this.notifyBuyer(userId, (name) =>
+      emails.orderApproved(name, {
+        orderId,
+        total: koboToNaira(updated.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" }),
+        deliverySlot: updated.deliverySlot,
+        pickupCenter: [updated.pickupCenterName, updated.pickupCenterAddress].filter(Boolean).join(", "),
+        pickupDate: shortDate(updated.pickupDate),
+      }),
+    );
+    return { ...response, userId, deliverySlot: updated.deliverySlot };
   }
 
   async reject(orderId: string, staffId: string, reason: string) {
