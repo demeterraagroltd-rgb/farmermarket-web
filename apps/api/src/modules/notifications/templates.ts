@@ -206,6 +206,7 @@ export const emails = {
       deliverySlot?: string | null;
       pickupCenter: string;
       pickupDate?: string | null;
+      repaymentSetup?: boolean;
     },
   ) => ({
     subject: "Your order is approved",
@@ -218,7 +219,22 @@ export const emails = {
               ? `Pickup date: <strong>${esc(opts.pickupDate)}</strong>`
               : "We'll confirm a collection time shortly."
         }</p>` +
-        cta(customerLinks.order(opts.orderId), "Track this order"),
+        (opts.repaymentSetup
+          ? `<p><strong>Next step:</strong> set up your repayment. Open your order, enter the bank account you'll repay from, then approve the request from our repayment partner Recova.</p>` +
+            cta(customerLinks.order(opts.orderId), "Set up repayment")
+          : cta(customerLinks.order(opts.orderId), "Track this order")),
+    ),
+  }),
+  /** Staff-triggered reminder for an approved order whose repayment isn't set up yet. */
+  repaymentSetup: (name: string, opts: { orderId: string; total: string }) => ({
+    subject: "Action needed: set up repayment for your order",
+    html: wrap(
+      `<p>Hi ${esc(name)},</p><p>Your order of <strong>${esc(opts.total)}</strong> is approved. ` +
+        `To complete it, please set up your repayment.</p>` +
+        `<ol><li>Open your order using the button below.</li>` +
+        `<li>Choose <strong>Set up repayment with Recova</strong> and enter the bank account you'll repay from.</li>` +
+        `<li>Approve the request from Recova, our repayment partner.</li></ol>` +
+        cta(customerLinks.order(opts.orderId), "Set up repayment"),
     ),
   }),
   orderRejected: (name: string, opts: { orderId: string; reason: string }) => ({

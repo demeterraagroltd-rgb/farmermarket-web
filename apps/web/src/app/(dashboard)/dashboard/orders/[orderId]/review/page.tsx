@@ -194,6 +194,24 @@ export default function OrderReviewPage() {
     load();
   }, [load, router]);
 
+  const [setupLinkResult, setSetupLinkResult] = useState<string | null>(null);
+  async function sendSetupLink() {
+    setBusy(true);
+    setError(null);
+    setSetupLinkResult(null);
+    try {
+      const res = await apiFetch(`/v1/admin/orders/${orderId}/repayment-setup-link`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message ?? "Failed to send the setup link");
+      const sms = { sent: "SMS sent", failed: "SMS failed", not_configured: "SMS not configured", invalid_phone: "phone number invalid for SMS" }[body.sms as string] ?? body.sms;
+      setSetupLinkResult(`${body.email === "sent" ? "Email sent" : "No email on file"} · ${sms}. Link: ${body.link}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to send the setup link");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approve() {
     setBusy(true);
     try {
@@ -449,10 +467,21 @@ export default function OrderReviewPage() {
           <Card className="p-6">
             <h3 className="mb-3 text-sm font-bold text-text-dark">Decision</h3>
             {!isPending ? (
-              <p className="text-sm text-text-muted">
-                This order is already {order.status.replace(/_/g, " ")}
-                {order.rejectionReason ? ` — ${order.rejectionReason}` : ""}.
-              </p>
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-text-muted">
+                  This order is already {order.status.replace(/_/g, " ")}
+                  {order.rejectionReason ? ` — ${order.rejectionReason}` : ""}.
+                </p>
+                {order.approvedAt && !["cancelled", "rejected"].includes(order.status) && (
+                  <>
+                    <Button variant="secondary" onClick={sendSetupLink} disabled={busy}>
+                      {busy ? "Sending…" : "Send repayment setup link"}
+                    </Button>
+                    <p className="text-xs text-text-muted">Emails and texts the customer a link to set up Recova repayment for this order.</p>
+                    {setupLinkResult && <p className="break-all text-xs text-text-medium">{setupLinkResult}</p>}
+                  </>
+                )}
+              </div>
             ) : (
               <div className="flex flex-col gap-4">
                 <div>

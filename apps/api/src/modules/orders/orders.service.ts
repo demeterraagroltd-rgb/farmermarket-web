@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { koboToNaira, percentOfKobo } from "@farmermarket/core";
 import {
@@ -10,6 +10,7 @@ import {
   creditLimitChanges,
   repaymentSchedules,
   users,
+  auditLogs,
   type Db,
   type Tx,
 } from "@farmermarket/db";
@@ -19,6 +20,10 @@ import { AuthService } from "../auth/auth.service";
 import { KycService } from "../kyc/kyc.service";
 import { EmailService } from "../notifications/email.service";
 import { emails } from "../notifications/templates";
+import { customerLinks } from "../notifications/links";
+import { SMS_SENDER, type SmsSender } from "../integrations/sms/sms.types";
+import { consentSetupStatus } from "../recova/recova-consent.config";
+import { normalisePhone, isNigerianMobile } from "../../common/phone";
 import { recordOrderReservation, recordOrderFulfilment } from "../inventory/inventory-stock";
 import { reserveOrderLines, releaseOrderStock } from "./order-inventory";
 import type { CreateOrderInput } from "./dto/create-order.dto";
@@ -44,7 +49,58 @@ export class OrdersService {
     private readonly authService: AuthService,
     private readonly kyc: KycService,
     private readonly email: EmailService,
+    // Optional: tests and the isolated practice journey construct this without SMS.
+    @Inject(SMS_SENDER) @Optional() private readonly sms?: SmsSender,
   ) {}
+
+  /** Recova repayment setup is offered once its encrypted draft storage exists. */
+  private recovaSetupOffered() {
+    return consentSetupStatus().draftAvailable;
+  }
+
+  /**
+   * Tell the buyer how to set up repayment for an approved order: email plus
+   * SMS. The link opens their order page, where they enter their bank account
+   * and get Recova's approval link. Sends nothing to Recova itself.
+   */
+  async sendRepaymentSetupLink(orderId: string, staffId?: string) {
+    const [order] = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!order) throw new NotFoundException("Order not found");
+    if (!order.approvedAt || ["cancelled", "rejected"].includes(order.status)) {
+      throw new BadRequestException("Only approved orders need repayment setup.");
+    }
+    if (!this.recovaSetupOffered()) throw new BadRequestException("Recova repayment setup is not configured on this server.");
+    const [u] = await this.db
+      .select({ fullName: users.fullName, email: users.email, phone: users.phone })
+      .from(users).where(eq(users.id, order.userId)).limit(1);
+    if (!u) throw new NotFoundException("Customer not found");
+    const total = koboToNaira(order.totalKobo).toLocaleString("en-NG", { style: "currency", currency: "NGN" });
+    const link = customerLinks.order(orderId);
+
+    let email: "sent" | "no_email" = "no_email";
+    if (u.email) {
+      void this.email.send({ to: u.email, ...emails.repaymentSetup(u.fullName ?? "there", { orderId, total }) });
+      email = "sent";
+    }
+    let sms: "sent" | "failed" | "not_configured" | "invalid_phone" = "not_configured";
+    const phone = normalisePhone(u.phone);
+    if (!isNigerianMobile(phone)) sms = "invalid_phone";
+    else if (this.sms?.live) {
+      try {
+        await this.sms.send(phone, `Farmer Market: your order of ${total} is approved. Set up your repayment to complete it: ${link}`);
+        sms = "sent";
+      } catch {
+        sms = "failed";
+      }
+    }
+    if (staffId) {
+      await this.db.insert(auditLogs).values({
+        actorStaffId: staffId, action: "order.repayment_setup_link_sent", targetType: "order", targetId: orderId,
+        metadata: { email, sms },
+      });
+    }
+    return { email, sms, link };
+  }
 
   private async notifyBuyer(userId: string, build: (name: string, email: string | null) => { subject: string; html: string }) {
     const [u] = await this.db
@@ -321,8 +377,19 @@ export class OrdersService {
         deliverySlot: updated.deliverySlot,
         pickupCenter: [updated.pickupCenterName, updated.pickupCenterAddress].filter(Boolean).join(", "),
         pickupDate: shortDate(updated.pickupDate),
+        repaymentSetup: this.recovaSetupOffered(),
       }),
     );
+    // The email above carries the setup link; add an SMS so a buyer who
+    // doesn't check email still learns the order needs repayment setup.
+    if (this.recovaSetupOffered()) {
+      const [u] = await this.db.select({ phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1);
+      const phone = u ? normalisePhone(u.phone) : "";
+      if (this.sms?.live && isNigerianMobile(phone)) {
+        this.sms.send(phone, `Farmer Market: your order is approved. Set up your repayment to complete it: ${customerLinks.order(orderId)}`)
+          .catch(() => undefined);
+      }
+    }
     return { ...response, userId, deliverySlot: updated.deliverySlot };
   }
 

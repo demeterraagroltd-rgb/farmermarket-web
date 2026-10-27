@@ -57,6 +57,13 @@ export class AdminOrdersController {
     return this.ordersService.approve(id, staff.staffId, body.deliverySlot);
   }
 
+  // Email + SMS the buyer the link to set up Recova repayment for this order.
+  @Post(":id/repayment-setup-link")
+  @Roles("super_admin", "admin")
+  sendRepaymentSetupLink(@Param("id") id: string, @CurrentStaff() staff: AuthenticatedStaff) {
+    return this.ordersService.sendRepaymentSetupLink(id, staff.staffId);
+  }
+
   @Post(":id/reject")
   @Roles("super_admin", "admin")
   reject(
