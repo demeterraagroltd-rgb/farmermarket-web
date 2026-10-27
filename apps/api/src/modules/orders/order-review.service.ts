@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { desc, eq } from "drizzle-orm";
-import { applications, type Db } from "@farmermarket/db";
+import { applications, recovaConsents, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
 import { KycService } from "../kyc/kyc.service";
 import { WalletService } from "../wallet/wallet.service";
@@ -47,6 +47,15 @@ export class OrderReviewService {
         .where(eq(applications.userId, userId))
         .orderBy(desc(applications.createdAt)),
     ]);
+    const [recova] = await this.db
+      .select({
+        reference: recovaConsents.reference, status: recovaConsents.status, purpose: recovaConsents.purpose,
+        bankCode: recovaConsents.bankCode, accountLast4: recovaConsents.accountLast4,
+        submittedAt: recovaConsents.submittedAt, checkedAt: recovaConsents.checkedAt,
+      })
+      .from(recovaConsents)
+      .where(eq(recovaConsents.orderId, order.id))
+      .limit(1);
 
     const orderHistory = otherOrders.filter((o) => o.id !== order.id);
     const otherPendingOrders = orderHistory.filter((o) => o.status === "pending_approval");
@@ -92,6 +101,7 @@ export class OrderReviewService {
       orderHistory,
       applications: applicationRows,
       repaymentPreview,
+      recova: recova ?? null,
       readiness: {
         kycVerified,
         identityChecked,

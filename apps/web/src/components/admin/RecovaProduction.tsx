@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { RECOVA_STATUS_LABEL } from "../../lib/recova-status";
 import { apiFetch } from "../../lib/auth";
 import { Card } from "../ui/Card";
 import { RecovaReadiness, type RecovaReadinessReport } from "./RecovaReadiness";
@@ -8,12 +9,23 @@ import { RecovaReadiness, type RecovaReadinessReport } from "./RecovaReadiness";
 type Status = { enabled: boolean; tokenConfigured: boolean; configurationReady: boolean; destination: string | null; institutionCode: string | null; issues: string[];
   readiness?: RecovaReadinessReport;
   customerSetup?: { draftAvailable: boolean; submissionEnabled: boolean; issues: string[] } };
+type ConsentRow = { reference: string; status: string; purpose: string; bankCode: string; accountLast4: string;
+  submittedAt: string | null; createdAt: string; orderId: string; total: number; customerName: string | null };
+const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) : "—";
 export function RecovaProduction() {
   const [status, setStatus] = useState<Status | null>(null);
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
+  const [consents, setConsents] = useState<ConsentRow[] | null>(null);
+  async function loadConsents() {
+    try {
+      const response = await apiFetch("/v1/admin/recova/production/consents", { cache: "no-store" });
+      if (response.ok) setConsents(await response.json());
+    } catch { /* the list is a convenience; lookups below still work */ }
+  }
+  useEffect(() => { void loadConsents(); }, []);
   async function check(path: string) {
     setBusy(true); setError(null); setResult(null);
     try {
@@ -46,6 +58,26 @@ export function RecovaProduction() {
       </div>}
       {!!status.issues.length && <ul className="list-disc space-y-1 pl-5">{status.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
     </div>}
+    <div className="border-t pt-5">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="font-semibold">Customer repayment setups</h3>
+        <button className="text-sm font-semibold text-emerald-800 underline" disabled={busy} onClick={() => void loadConsents()}>Reload</button>
+      </div>
+      {consents === null ? <p className="text-sm text-slate-500">Loading…</p>
+        : consents.length === 0 ? <p className="text-sm text-slate-500">No customer has started Recova repayment setup yet.</p>
+        : <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+          <thead className="text-xs text-slate-500"><tr><th className="p-2">Customer</th><th className="p-2">Status</th><th className="p-2">Amount</th><th className="p-2">Account</th><th className="p-2">Sent</th><th className="p-2">Loan reference</th><th className="p-2" /></tr></thead>
+          <tbody>{consents.map((c) => <tr key={c.reference} className="border-t align-top">
+            <td className="p-2"><a className="font-semibold text-emerald-800 underline" href={`/dashboard/orders/${c.orderId}/review`}>{c.customerName ?? "Customer"}</a></td>
+            <td className="p-2">{RECOVA_STATUS_LABEL[c.status] ?? c.status}</td>
+            <td className="p-2">{new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(c.total)}</td>
+            <td className="p-2">{c.purpose} · ••{c.accountLast4}</td>
+            <td className="p-2 whitespace-nowrap">{when(c.submittedAt)}</td>
+            <td className="p-2 break-all font-mono text-xs">{c.reference}</td>
+            <td className="p-2"><button className="text-sm font-semibold text-emerald-800 underline" disabled={busy} onClick={() => setReference(c.reference)}>Use below</button></td>
+          </tr>)}</tbody>
+        </table></div>}
+    </div>
     <div className="border-t pt-5">
     <h3 className="mb-2 font-semibold">Read an existing Recova record</h3>
     <p className="mb-3 text-sm text-slate-600">Use a genuine production loan reference to inspect consent or mandate details. A missing record (404) does not verify authentication. These lookups do not collect money.</p>

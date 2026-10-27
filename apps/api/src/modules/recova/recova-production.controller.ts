@@ -1,4 +1,7 @@
-import { Controller, Get, Header, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Header, Inject, Param, UseGuards } from "@nestjs/common";
+import { desc, eq } from "drizzle-orm";
+import { orders, recovaConsents, users, type Db } from "@farmermarket/db";
+import { DB } from "../../db/db.module";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -18,6 +21,24 @@ const reference = z.string().min(1).max(100).regex(/^[A-Za-z0-9._-]+$/, "Use a v
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("super_admin", "admin")
 export class RecovaProductionController {
+  constructor(@Inject(DB) private readonly db: Db) {}
+
+  /** Every customer repayment setup we've recorded, newest first. No BVNs, full accounts or links. */
+  @Get("consents")
+  @Header("Cache-Control", "no-store")
+  async consents() {
+    const rows = await this.db.select({
+      reference: recovaConsents.reference, status: recovaConsents.status, purpose: recovaConsents.purpose,
+      bankCode: recovaConsents.bankCode, accountLast4: recovaConsents.accountLast4,
+      submittedAt: recovaConsents.submittedAt, checkedAt: recovaConsents.checkedAt, createdAt: recovaConsents.createdAt,
+      orderId: recovaConsents.orderId, totalKobo: orders.totalKobo, customerName: users.fullName,
+    }).from(recovaConsents)
+      .innerJoin(orders, eq(orders.id, recovaConsents.orderId))
+      .innerJoin(users, eq(users.id, recovaConsents.userId))
+      .orderBy(desc(recovaConsents.createdAt)).limit(200);
+    return rows.map(({ totalKobo, ...r }) => ({ ...r, total: Number(totalKobo) / 100 }));
+  }
+
   @Get("status")
   @Header("Cache-Control", "no-store")
   status() { return { ...productionStatus(), customerSetup: consentSetupStatus(), readiness: recovaReadiness() }; }

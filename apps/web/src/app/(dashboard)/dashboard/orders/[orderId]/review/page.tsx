@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { RECOVA_STATUS_LABEL } from "../../../../../../lib/recova-status";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../../../lib/auth";
@@ -93,6 +94,16 @@ interface Application {
   requestedLimitKobo: string | null;
   createdAt: string;
 }
+interface RecovaSetup {
+  reference: string;
+  status: string;
+  purpose: string;
+  bankCode: string;
+  accountLast4: string;
+  submittedAt: string | null;
+  checkedAt: string | null;
+}
+
 interface Review {
   order: Order;
   applicant: {
@@ -112,6 +123,7 @@ interface Review {
   orderHistory: OrderSummary[];
   applications: Application[];
   repaymentPreview: Array<{ installmentNumber: number; totalInstallments: number; amount: number; dueDate: string }> | null;
+  recova?: RecovaSetup | null;
   readiness: {
     kycVerified: boolean;
     identityChecked: boolean;
@@ -246,7 +258,7 @@ export default function OrderReviewPage() {
   if (error && !data) return <p className="text-sm text-error">{error}</p>;
   if (!data) return <Skeleton />;
 
-  const { order, applicant, creditPosition, orderHistory, applications, repaymentPreview, readiness } = data;
+  const { order, applicant, creditPosition, orderHistory, applications, repaymentPreview, readiness, recova } = data;
   const p = applicant.profile;
   const isPending = order.status === "pending_approval";
   const canApprove = isPending && readiness.kycVerified && (readiness.warnings.length === 0 || ack);
@@ -463,6 +475,23 @@ export default function OrderReviewPage() {
               </div>
             )}
           </Card>
+
+          {order.approvedAt && (
+            <Card className="p-6">
+              <h3 className="mb-3 text-sm font-bold text-text-dark">Recova repayment</h3>
+              {recova ? (
+                <dl className="space-y-1 text-sm">
+                  <div><dt className="inline text-text-muted">Status: </dt><dd className="inline font-semibold">{RECOVA_STATUS_LABEL[recova.status] ?? recova.status}</dd></div>
+                  <div><dt className="inline text-text-muted">Loan reference: </dt><dd className="inline break-all font-mono text-xs">{recova.reference}</dd></div>
+                  <div><dt className="inline text-text-muted">Purpose: </dt><dd className="inline">{recova.purpose} · bank {recova.bankCode} · account ending {recova.accountLast4}</dd></div>
+                  {recova.submittedAt && <div><dt className="inline text-text-muted">Sent to Recova: </dt><dd className="inline">{new Date(recova.submittedAt).toLocaleString("en-GB", { timeZone: "Africa/Lagos" })}</dd></div>}
+                  {recova.checkedAt && <div><dt className="inline text-text-muted">Last checked: </dt><dd className="inline">{new Date(recova.checkedAt).toLocaleString("en-GB", { timeZone: "Africa/Lagos" })}</dd></div>}
+                </dl>
+              ) : (
+                <p className="text-sm text-text-muted">The customer hasn&apos;t started repayment setup yet.</p>
+              )}
+            </Card>
+          )}
 
           <Card className="p-6">
             <h3 className="mb-3 text-sm font-bold text-text-dark">Decision</h3>
