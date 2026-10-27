@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -25,6 +25,10 @@ import {
   type TransactionListInput,
 } from "./dto/financial.dto";
 import { DeactivateCustomerDto, deactivateCustomerSchema } from "./dto/deactivate-customer.dto";
+import { CustomerTestDeletionService } from "./customer-test-deletion.service";
+import { z } from "zod";
+
+const testDeletionSchema = z.object({ confirmation: z.string().max(100), testDataConfirmed: z.literal(true), reason: z.string().trim().min(1).max(500) }).strict();
 
 // The one thing this controller needs from the HTTP response. Declared here
 // rather than importing express's type, which this package doesn't depend on.
@@ -47,6 +51,7 @@ export class CustomersController {
     private readonly customer360: Customer360Service,
     private readonly kyc: KycService,
     private readonly financial: CustomerFinancialService,
+    @Inject(CustomerTestDeletionService) private readonly testDeletion: CustomerTestDeletionService,
   ) {}
 
   @Get()
@@ -205,5 +210,18 @@ export class CustomersController {
     @CurrentStaff() staff: AuthenticatedStaff,
   ) {
     return this.customersService.reactivate(id, staff.staffId);
+  }
+
+  @Get(":id/test-deletion-preview")
+  @Roles("super_admin")
+  testDeletionPreview(@Param("id", new ParseUUIDPipe()) id: string) {
+    return this.testDeletion.preview(id);
+  }
+
+  @Post(":id/delete-test-account")
+  @Roles("super_admin")
+  deleteTestAccount(@Param("id", new ParseUUIDPipe()) id: string, @CurrentStaff() staff: AuthenticatedStaff,
+    @Body(new ZodValidationPipe(testDeletionSchema)) body: z.infer<typeof testDeletionSchema>) {
+    return this.testDeletion.remove(id, staff.staffId, body);
   }
 }

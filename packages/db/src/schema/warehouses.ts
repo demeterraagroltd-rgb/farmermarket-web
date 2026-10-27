@@ -33,7 +33,8 @@ export const warehouseMovements = pgTable('warehouse_movements', {
   reason: text('reason').notNull(),
   reference: text('reference'),
   actorStaffId: uuid('actor_staff_id').references(()=>staff.id),
-  orderId: uuid('order_id').references(()=>orders.id),
+  // Historical order reference; keep append-only movement evidence after a test reset.
+  orderId: uuid('order_id'),
   inventoryMovementId: uuid('inventory_movement_id').references(()=>inventoryMovements.id),
   createdAt: timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
 },t=>[index('warehouse_history_idx').on(t.warehouseId,t.createdAt),check('warehouse_history_nonnegative',sql`${t.availableBefore} >= 0 AND ${t.availableAfter} >= 0 AND ${t.reservedBefore} >= 0 AND ${t.reservedAfter} >= 0`)]);

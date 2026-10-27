@@ -26,6 +26,7 @@ import { Button } from "../../../../components/ui/Button";
 import { ActionMenu, type MenuItem } from "../../../../components/ui/ActionMenu";
 import { Input, Select, Textarea } from "../../../../components/ui/Field";
 import { StatCard } from "../../../../components/ui/StatCard";
+import { DeleteTestCustomer } from "../../../../components/admin/DeleteTestCustomer";
 
 // The customer directory. Every row is a doorway to the Customer 360 page
 // (dashboard/customers/[customerId]) — the name links there, and the ⋯ menu
@@ -54,6 +55,7 @@ export default function CustomersPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [testDeletionId, setTestDeletionId] = useState<string | null>(null);
 
   function load() {
     apiFetch("/v1/admin/customers")
@@ -207,6 +209,10 @@ export default function CustomersPage() {
         });
       }
     }
+    if (role === "super_admin") items.push({
+      label: "Permanently delete test account…", danger: true,
+      hint: "Irreversible. Review linked records first.", onSelect: () => setTestDeletionId(c.id),
+    });
     return items;
   }
 
@@ -357,6 +363,9 @@ export default function CustomersPage() {
         </Card>
       )}
 
+      {testDeletionId && <DeleteTestCustomer id={testDeletionId} onClose={() => setTestDeletionId(null)} onDeleted={() => {
+        setTestDeletionId(null); setNotice("The test account and linked test records were permanently removed. The customer can register again."); load();
+      }} />}
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <Card className="w-full max-w-md p-6">

@@ -17,7 +17,9 @@ export const inventoryMovements = pgTable("inventory_movements", {
   reason: text("reason").notNull(),
   reference: text("reference"),
   actorStaffId: uuid("actor_staff_id").references(() => staff.id),
-  orderId: uuid("order_id").references(() => orders.id),
+  // Historical reference, like ledger_entries.order_id. Immutable movements
+  // must survive an explicitly confirmed test-order purge without being edited.
+  orderId: uuid("order_id"),
   receiptId: uuid("receipt_id").references(() => goodsReceipts.id),
   warehouseId: uuid("warehouse_id").references(() => pickupCenters.id),
   eventKey: text("event_key").notNull().unique(),

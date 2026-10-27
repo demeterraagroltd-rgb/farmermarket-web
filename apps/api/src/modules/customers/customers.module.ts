@@ -7,12 +7,13 @@ import { CustomersController } from "./customers.controller";
 import { CustomersService } from "./customers.service";
 import { Customer360Service } from "./customer-360.service";
 import { CustomerFinancialService } from "./customer-financial.service";
+import { CustomerTestDeletionService } from "./customer-test-deletion.service";
 
 @Module({
   // The 360 page composes existing services rather than re-querying their
   // tables: KYC/identity/bank, credit + repayments, and orders.
   imports: [AuthModule, KycModule, WalletModule, OrdersModule],
   controllers: [CustomersController],
-  providers: [CustomersService, Customer360Service, CustomerFinancialService],
+  providers: [CustomersService, Customer360Service, CustomerFinancialService, CustomerTestDeletionService],
 })
 export class CustomersModule {}
