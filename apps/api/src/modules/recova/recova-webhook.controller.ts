@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, Inject, Post, UnauthorizedException, NotFoundException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
+import { Body, Controller, Headers, HttpCode, Inject, Logger, Post, UnauthorizedException, NotFoundException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -12,11 +12,20 @@ import { RecovaConsentService } from "./recova-consent.service";
 const baseSchema = z.object({ loanReference: z.string().regex(/^fm-live-[a-f0-9-]{36}$/), institutionCode: z.string().min(1).max(20) });
 const smsSchema = baseSchema.extend({ phoneNumber: z.string().regex(/^\+?\d{10,15}$/), message: z.string().min(1).max(2000) }).strict();
 const mandateSchema = baseSchema.strict();
-export function authenticateRecovaCallback(secret: string | undefined) {
-  const expected = process.env.RECOVA_WEBHOOK_SECRET;
-  if (process.env.RECOVA_WEBHOOKS_ENABLED !== "true" || !expected || expected.length < 32 || typeof secret !== "string") throw new UnauthorizedException();
-  const a = Buffer.from(secret), b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) throw new UnauthorizedException();
+const log = new Logger("RecovaWebhook");
+/** Rejections are logged with a reason (never the header value) so a provider's
+ * 401 can be diagnosed from the server logs. */
+export function authenticateRecovaCallback(secret: string | undefined, route = "callback") {
+  const expected = process.env.RECOVA_WEBHOOKS_ENABLED === "true" ? process.env.RECOVA_WEBHOOK_SECRET : undefined;
+  const reject = (reason: string) => {
+    log.warn(`Rejected Recova ${route} webhook (401): ${reason}`);
+    throw new UnauthorizedException();
+  };
+  if (!expected || expected.length < 32) reject("webhooks are disabled or RECOVA_WEBHOOK_SECRET is not configured on this server");
+  if (secret === undefined) reject("x-recova-webhook-secret header is missing");
+  if (secret!.trim() === "") reject("x-recova-webhook-secret header is empty");
+  const a = Buffer.from(secret!), b = Buffer.from(expected!);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) reject("x-recova-webhook-secret header does not match");
 }
 const phone = (value: string) => value.replace(/^\+/, "").replace(/^0(?=\d{10}$)/, "234");
 
@@ -39,7 +48,7 @@ export class RecovaWebhookController {
   @HttpCode(200)
   async sendSms(@Headers("x-recova-webhook-secret") secret: string | undefined,
     @Body(new ZodValidationPipe(smsSchema)) body: z.infer<typeof smsSchema>) {
-    authenticateRecovaCallback(secret);
+    authenticateRecovaCallback(secret, "sms");
     const row = await this.known(body.loanReference, body.institutionCode);
     const [profile] = await this.db.select({ phone: applicantProfiles.phone }).from(applicantProfiles).where(eq(applicantProfiles.userId, row.userId)).limit(1);
     if (!profile || phone(profile.phone) !== phone(body.phoneNumber)) throw new UnauthorizedException("Recipient does not match the loan customer.");
@@ -66,7 +75,7 @@ export class RecovaWebhookController {
   @HttpCode(200)
   async mandate(@Headers("x-recova-webhook-secret") secret: string | undefined,
     @Body(new ZodValidationPipe(mandateSchema)) body: z.infer<typeof mandateSchema>) {
-    authenticateRecovaCallback(secret);
+    authenticateRecovaCallback(secret, "mandate-created");
     const row = await this.known(body.loanReference, body.institutionCode);
     // Re-read the mandate with our own bearer token. The callback cannot
     // activate a loan or disburse money merely by asserting that it exists.
