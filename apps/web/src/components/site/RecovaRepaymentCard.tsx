@@ -52,6 +52,9 @@ export function RecovaRepaymentCard({ orderId }: { orderId: string }) {
   const button = "rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-40";
   const consent = data?.consent;
   const done = consent?.status === "active";
+  // Pay Now and closed orders aren't loans: show nothing rather than an
+  // unavailable Recova box, unless a setup was already started for this order.
+  if (data && !data.eligible && !data.consent) return null;
   return <Card className="mt-6 space-y-4 p-5">
     <h2 className="font-semibold text-text-dark">{done ? "Repayment set up with Recova" : "Set up repayment with Recova"}</h2>
     {!done && <p className="text-sm text-text-medium">Authorize repayment for this order through Recova. Your existing bank connection does not replace this authorization.</p>}

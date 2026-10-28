@@ -112,6 +112,8 @@ export class OrderReviewService {
       applications: applicationRows,
       repaymentPreview,
       recova: recova ?? null,
+      // Pay Now orders are paid in full, so staff screens skip Recova setup.
+      payNow: !!order.bnplPlan && isPayNow(order.bnplPlan),
       readiness: {
         kycVerified,
         identityChecked,

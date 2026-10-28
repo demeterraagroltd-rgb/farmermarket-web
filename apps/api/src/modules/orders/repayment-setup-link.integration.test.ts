@@ -6,7 +6,7 @@ import { createTestDb, type TestDb } from "../../test/test-db";
 import { OrdersService } from "./orders.service";
 
 describe("Repayment setup link", () => {
-  let t: TestDb; let db: Db; let staffId: string; let approved: string; let pending: string;
+  let t: TestDb; let db: Db; let staffId: string; let approved: string; let pending: string; let payNow: string;
   const email = { send: vi.fn().mockResolvedValue(undefined) };
   const sms = { live: true, send: vi.fn().mockResolvedValue(undefined) };
   const service = () => new OrdersService(db, {} as never, {} as never, {} as never, email as never, sms);
@@ -15,11 +15,13 @@ describe("Repayment setup link", () => {
     t = await createTestDb(); db = t.db;
     const [{ id: userId }] = await db.insert(users).values({ phone: "08012345678", email: "buyer@example.com", fullName: "Buyer" }).returning();
     [{ id: staffId }] = await db.insert(staff).values({ email: "staff@example.com", passwordHash: "x", fullName: "Admin", role: "admin" }).returning();
-    const [{ id: planId }] = await db.insert(bnplPlans).values({ name: "Pay Next Salary", durationMonths: 0 }).returning();
+    const [{ id: planId }] = await db.insert(bnplPlans).values({ name: "Pay Next Salary", durationMonths: 0, durationDays: 30 }).returning();
     const [{ id: centreId }] = await db.insert(pickupCenters).values({ name: "Pickup", address: "Centre" }).returning();
     const base = { userId, bnplPlanId: planId, pickupCenterId: centreId, totalKobo: 147850n, subtotalKobo: 95000n };
     [{ id: approved }] = await db.insert(orders).values({ ...base, status: "confirmed", approvedAt: new Date() } as never).returning();
     [{ id: pending }] = await db.insert(orders).values({ ...base, status: "pending_approval" } as never).returning();
+    const [{ id: payNowPlan }] = await db.insert(bnplPlans).values({ name: "Pay Now", durationMonths: 0 }).returning();
+    [{ id: payNow }] = await db.insert(orders).values({ ...base, bnplPlanId: payNowPlan, status: "confirmed", approvedAt: new Date() } as never).returning();
   }, 20000);
   afterAll(async () => t?.close());
   afterEach(() => { vi.unstubAllEnvs(); email.send.mockClear(); sms.send.mockClear(); });
@@ -38,6 +40,13 @@ describe("Repayment setup link", () => {
   it("also reminds customers whose order is waiting on repayment setup", async () => {
     vi.stubEnv("RECOVA_DATA_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
     expect(await service().sendRepaymentSetupLink(pending, staffId)).toMatchObject({ email: "sent" });
+  });
+
+  it("never asks Pay Now customers to set up repayment", async () => {
+    vi.stubEnv("RECOVA_DATA_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
+    await expect(service().sendRepaymentSetupLink(payNow, staffId)).rejects.toThrow("Pay Now");
+    expect(email.send).not.toHaveBeenCalled();
+    expect(sms.send).not.toHaveBeenCalled();
   });
 
   it("refuses closed orders and servers without Recova setup", async () => {

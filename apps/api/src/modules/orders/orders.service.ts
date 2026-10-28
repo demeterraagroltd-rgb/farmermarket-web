@@ -71,6 +71,8 @@ export class OrdersService {
       throw new BadRequestException("Only open orders need repayment setup.");
     }
     if (!this.recovaSetupOffered()) throw new BadRequestException("Recova repayment setup is not configured on this server.");
+    const [plan] = await this.db.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
+    if (plan && isPayNow(plan)) throw new BadRequestException("Pay Now orders are paid in full, so they don't need Recova repayment setup.");
     const [consent] = await this.db.select({ status: recovaConsents.status }).from(recovaConsents).where(eq(recovaConsents.orderId, orderId)).limit(1);
     if (consent && ["submitting", "processing", "active"].includes(consent.status)) {
       throw new BadRequestException("This order's Recova repayment is already set up.");

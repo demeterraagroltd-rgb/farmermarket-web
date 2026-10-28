@@ -124,6 +124,7 @@ interface Review {
   applications: Application[];
   repaymentPreview: Array<{ installmentNumber: number; totalInstallments: number; amount: number; dueDate: string }> | null;
   recova?: RecovaSetup | null;
+  payNow?: boolean;
   readiness: {
     kycVerified: boolean;
     identityChecked: boolean;
@@ -258,7 +259,7 @@ export default function OrderReviewPage() {
   if (error && !data) return <p className="text-sm text-error">{error}</p>;
   if (!data) return <Skeleton />;
 
-  const { order, applicant, creditPosition, orderHistory, applications, repaymentPreview, readiness, recova } = data;
+  const { order, applicant, creditPosition, orderHistory, applications, repaymentPreview, readiness, recova, payNow } = data;
   const p = applicant.profile;
   const isPending = order.status === "pending_approval";
   const canApprove = isPending && readiness.blockers.length === 0 && (readiness.warnings.length === 0 || ack);
@@ -476,7 +477,7 @@ export default function OrderReviewPage() {
             )}
           </Card>
 
-          {(order.approvedAt || isPending) && (
+          {(order.approvedAt || isPending) && (!payNow || recova) && (
             <Card className="p-6">
               <h3 className="mb-3 text-sm font-bold text-text-dark">Recova repayment</h3>
               {recova ? (
