@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   applications, bnplPlans, brands, categories, creditProfiles, ledgerEntries, orders, pickupCenters,
-  products, repaymentSchedules, repayments, staff, warehouseStocks, type Db,
+  products, recovaConsents, repaymentSchedules, repayments, staff, warehouseStocks, type Db,
 } from "@farmermarket/db";
 import { ApplicationsService } from "../applications/applications.service";
 import { OrdersService } from "../orders/orders.service";
@@ -78,7 +78,7 @@ export class RecovaJourneyService implements OnModuleDestroy {
         const email = { send: async () => undefined } as never;
         const otp = { assertPhoneVerified: async () => undefined } as never;
         const auth = { assertTxnPin: async () => undefined } as never;
-        const kyc = { assertVerified: async () => undefined, getVerificationStatus: async () => "verified" } as never;
+        const kyc = { assertVerified: async () => undefined, assertSubmitted: async () => undefined, getVerificationStatus: async () => "verified" } as never;
         const ledger = new LedgerService();
         const next: Run = {
           id: `fm-practice-${randomUUID()}`, owner, db, close: () => client.close(), next: 0,
@@ -152,13 +152,16 @@ export class RecovaJourneyService implements OnModuleDestroy {
         break;
       }
       case 3:
+        // Recorded in the isolated database only, so approval's real mandate check passes.
+        await r.db.insert(recovaConsents).values({ userId: r.userId!, orderId: r.orderId!, reference: `${r.id}-mandate`, status: "active",
+          purpose: "Collection", bankCode: "000", accountLast4: "0000", payloadEncrypted: "simulated", scheduleSnapshot: [], consentVersion: "practice" });
         r.mandate = "active — SIMULATED";
         detail = "Customer consent and bank mandate activation are simulated here. No Recova request was made. A provider-verified active mandate is still required in the real integration.";
         break;
       case 4:
         if (r.mandate !== "active — SIMULATED") throw new ConflictException("A practice mandate must be active first.");
         await r.orderService.approve(r.orderId!, r.staffId, "Sandbox pickup");
-        detail = "The actual order-approval service created three installments, consumed test credit and posted balanced ledger entries. This practice runner checks the simulated mandate first; the production approval gate is not yet connected to Recova.";
+        detail = "The actual order-approval service created three installments, consumed test credit and posted balanced ledger entries. As in production, approval required the (here simulated) mandate to be active first.";
         break;
       case 5:
         await r.orderService.updateStatus(r.orderId!, "delivered", r.staffId);

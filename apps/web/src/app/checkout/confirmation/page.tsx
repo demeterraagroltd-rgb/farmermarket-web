@@ -66,7 +66,8 @@ function ConfirmationContent() {
           </div>
           <h1 className="mt-4 text-2xl font-bold text-text-dark">Order placed</h1>
           <p className="mt-2 text-text-medium">
-            It&apos;s awaiting a quick approval — you&apos;ll get an email the moment it&apos;s confirmed.
+            Next, set up your repayment from your order page. We approve your order once that&apos;s done and your
+            details are checked — you&apos;ll get an email the moment it&apos;s confirmed.
           </p>
 
           {order === undefined ? (
@@ -98,10 +99,10 @@ function ConfirmationContent() {
           ) : null}
 
           <Link
-            href="/account"
+            href={orderId ? `/account/orders/${orderId}` : "/account"}
             className="mt-6 inline-flex items-center justify-center rounded-[var(--radius-sm)] bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
           >
-            Go to your account
+            {orderId ? "Set up repayment" : "Go to your account"}
           </Link>
         </Card>
       </main>

@@ -89,6 +89,12 @@ export const bnplPlans = pgTable("bnpl_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   durationMonths: integer("duration_months").notNull(),
+  // A single repayment this many days after the order is placed. Overrides
+  // durationMonths; used by staff test plans to exercise a real debit quickly.
+  durationDays: integer("duration_days"),
+  // Hidden from the public plan list; offered only to the customers listed in
+  // TEST_PLAN_CUSTOMER_PHONES.
+  testOnly: boolean("test_only").notNull().default(false),
   interestPercent: integer("interest_percent").notNull().default(0),
   isPopular: boolean("is_popular").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),

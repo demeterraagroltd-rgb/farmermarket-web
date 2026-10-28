@@ -35,9 +35,15 @@ describe("Repayment setup link", () => {
     expect(audit).toMatchObject({ action: "order.repayment_setup_link_sent", actorStaffId: staffId });
   });
 
-  it("refuses unapproved orders and servers without Recova setup", async () => {
+  it("also reminds customers whose order is waiting on repayment setup", async () => {
     vi.stubEnv("RECOVA_DATA_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
-    await expect(service().sendRepaymentSetupLink(pending, staffId)).rejects.toThrow("approved");
+    expect(await service().sendRepaymentSetupLink(pending, staffId)).toMatchObject({ email: "sent" });
+  });
+
+  it("refuses closed orders and servers without Recova setup", async () => {
+    vi.stubEnv("RECOVA_DATA_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
+    await db.update(orders).set({ status: "rejected" }).where(eq(orders.id, pending));
+    await expect(service().sendRepaymentSetupLink(pending, staffId)).rejects.toThrow("open orders");
     vi.stubEnv("RECOVA_DATA_ENCRYPTION_KEY", "");
     await expect(service().sendRepaymentSetupLink(approved, staffId)).rejects.toThrow("not configured");
     expect(email.send).not.toHaveBeenCalled();

@@ -51,22 +51,24 @@ export function RecovaRepaymentCard({ orderId }: { orderId: string }) {
   const input = "mt-1 w-full rounded-lg border border-dark-border px-3 py-2 text-sm";
   const button = "rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-40";
   const consent = data?.consent;
+  const done = consent?.status === "active";
   return <Card className="mt-6 space-y-4 p-5">
-    <h2 className="font-semibold text-text-dark">Set up repayment with Recova</h2>
-    <p className="text-sm text-text-medium">Authorize repayment for this order through Recova. Your existing bank connection does not replace this authorization.</p>
+    <h2 className="font-semibold text-text-dark">{done ? "Repayment set up with Recova" : "Set up repayment with Recova"}</h2>
+    {!done && <p className="text-sm text-text-medium">Authorize repayment for this order through Recova. Your existing bank connection does not replace this authorization.</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {error?.toLowerCase().includes("bvn") && <a href="/account#bvn-verification" className="inline-block text-sm font-semibold text-primary underline">Re-enter your BVN in your account</a>}
     {!data && <button className={button} disabled={busy} onClick={() => void load()}>Load repayment setup</button>}
-    {data && !data.eligible && <p className="text-sm text-text-muted">Repayment setup is available after your financed order is approved.</p>}
+    {data && !data.eligible && <p className="text-sm text-text-muted">Repayment setup isn't available for this order.</p>}
+    {data?.eligible && !done && <p className="text-sm font-semibold text-text-dark">Set this up now: we approve your order once your repayment mandate is active.</p>}
     {consent && <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
       <p className="font-semibold">{labels[consent.status] ?? "Awaiting verification"}</p>
       <p>Purpose: {consent.purpose} · {RECOVA_BANKS.find(bank => bank.code === consent.bankCode)?.name ?? "Bank account"} · Account ending {consent.accountLast4}</p>
       <p className="break-all text-xs">Loan reference: {consent.reference}</p>
       <ul>{consent.schedule.map(row => <li key={row.dueDate}>{formatDate(row.dueDate)}: {formatNairaAmount(row.amount)}</li>)}</ul>
-      {consent.approvalUrl && <a className="inline-block font-semibold text-primary underline" href={consent.approvalUrl} target="_blank" rel="noopener noreferrer">Continue authorization on Recova</a>}
+      {consent.approvalUrl && !done && <a className="inline-block font-semibold text-primary underline" href={consent.approvalUrl} target="_blank" rel="noopener noreferrer">Continue authorization on Recova</a>}
       {consent.status === "needs_review" && <p>We could not confirm the request outcome. Contact support with your loan reference. Do not start another request.</p>}
-      {consent.status === "active" && <p>Recova has confirmed the mandate. This status does not mean a payment has been received.</p>}
-      {consent.status !== "draft" && <button className={button} disabled={busy} onClick={() => void action("refresh")}>Check authorization status</button>}
+      {done && <p>You're all set for this order. Recova has confirmed your mandate, so there is nothing more to do. Repayments will be collected on the dates above.</p>}
+      {consent.status !== "draft" && !done && <button className={button} disabled={busy} onClick={() => void action("refresh")}>Check authorization status</button>}
     </div>}
     {data?.eligible && (!consent || consent.status === "draft") && <>
       {(!consent || editing) && (!data.setup.draftAvailable ? <p className="text-sm text-text-muted">Repayment setup is being configured. Please contact support.</p> : <form onSubmit={event => void action("prepare", event)} className="space-y-3">

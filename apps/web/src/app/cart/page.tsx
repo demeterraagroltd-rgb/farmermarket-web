@@ -27,7 +27,8 @@ export default function CartPage() {
   if (lines === null) return null; // avoids a flash of "empty" before localStorage is read
 
   const totals = totalsOf(lines);
-  const verified = session?.verificationStatus === "verified";
+  // A submitted application can order; staff verify before approving the order.
+  const verified = session?.verificationStatus === "verified" || session?.verificationStatus === "submitted";
 
   return (
     <>

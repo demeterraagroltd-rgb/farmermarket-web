@@ -21,6 +21,12 @@ export class OrdersController {
     return this.ordersService.findAllForUser(user.userId);
   }
 
+  /** Plans this customer can choose at checkout, including any test plans they're allowed. */
+  @Get("plans")
+  plans(@CurrentUser() user: AuthenticatedUser) {
+    return this.ordersService.plansForUser(user.userId);
+  }
+
   @Get(":id")
   findOne(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.ordersService.findOneForUser(user.userId, id);

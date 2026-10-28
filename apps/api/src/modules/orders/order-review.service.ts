@@ -5,6 +5,8 @@ import { DB } from "../../db/db.module";
 import { KycService } from "../kyc/kyc.service";
 import { WalletService } from "../wallet/wallet.service";
 import { OrdersService } from "./orders.service";
+import { isPayNow } from "./installments";
+import { consentSetupStatus } from "../recova/recova-consent.config";
 
 // An application still moving through the (separate, parallel) origination
 // pipeline — the counterpart of "one open application per user" in
@@ -63,7 +65,7 @@ export class OrderReviewService {
 
     const repaymentPreview =
       order.status === "pending_approval" && order.bnplPlan
-        ? this.orders.previewInstallments(order.totalKobo, order.bnplPlan)
+        ? this.orders.previewInstallments(order.totalKobo, order.bnplPlan, order.placedAt)
         : null;
 
     const profile = applicant.profile as Record<string, unknown> & { verificationStatus: string };
@@ -74,6 +76,14 @@ export class OrderReviewService {
 
     const blockers: string[] = [];
     if (!kycVerified) blockers.push("Applicant KYC is not verified — verification is required before approval.");
+    if (order.status === "pending_approval" && order.bnplPlan && !isPayNow(order.bnplPlan)) {
+      if (repaymentPreview && repaymentPreview[0].dueDate <= new Date()) {
+        blockers.push("The first repayment date has already passed — reject this order and ask the customer to order again.");
+      }
+      if (consentSetupStatus().submissionEnabled && recova?.status !== "active") {
+        blockers.push("The customer's Recova repayment mandate isn't active yet — approve once it shows as active.");
+      }
+    }
 
     const warnings: string[] = [];
     if (hasOverdueRepayments) {

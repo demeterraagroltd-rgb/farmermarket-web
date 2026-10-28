@@ -820,6 +820,12 @@ export class KycService {
     if (p?.status !== "verified") throw new ForbiddenException("NOT_VERIFIED");
   }
 
+  /** Ordering only needs a submitted application; staff verify before approval. */
+  async assertSubmitted(userId: string) {
+    const status = await this.getVerificationStatus(userId);
+    if (status !== "submitted" && status !== "verified") throw new ForbiddenException("NOT_SUBMITTED");
+  }
+
   async getVerificationStatus(userId: string): Promise<string> {
     const [p] = await this.db
       .select({ status: applicantProfiles.verificationStatus })

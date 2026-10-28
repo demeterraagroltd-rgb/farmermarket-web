@@ -29,7 +29,7 @@ describe("Bundles through real order SQL and migrations", () => {
     [{ id: bundle }] = await db.insert(bundles).values({ name: "Kitchen", slug: "kitchen", description: "Rice and oil", imageUrl: "https://example.com/bundle.png", bundlePriceKobo: 170000n, active: true, featured: true }).returning();
     await db.insert(bundleItems).values([{ bundleId: bundle, productId: rice, quantity: 1 }, { bundleId: bundle, productId: oil, quantity: 2 }]);
     service = new OrdersService(db, {} as never, { assertTxnPin: vi.fn().mockResolvedValue(undefined) } as never,
-      { assertVerified: vi.fn().mockResolvedValue(undefined) } as never, { send: vi.fn().mockResolvedValue(undefined) } as never);
+      { assertVerified: vi.fn().mockResolvedValue(undefined), assertSubmitted: vi.fn().mockResolvedValue(undefined) } as never, { send: vi.fn().mockResolvedValue(undefined) } as never);
     catalog = new BundlesService(db);
   }, 20000);
   afterAll(async () => t?.close());

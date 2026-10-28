@@ -76,7 +76,7 @@ export const emails = {
   // ── Order ────────────────────────────────────────────────────────────
   orderReceived: (
     name: string,
-    opts: { orderId: string; total: string; pickupCenter: string; pickupDate?: string | null },
+    opts: { orderId: string; total: string; pickupCenter: string; pickupDate?: string | null; repaymentSetup?: boolean },
   ) => ({
     subject: "We've got your order",
     html: wrap(
@@ -84,7 +84,10 @@ export const emails = {
         `<p>Collect from: <strong>${esc(opts.pickupCenter)}</strong>${
           opts.pickupDate ? `<br/>Pickup date: <strong>${esc(opts.pickupDate)}</strong>` : ""
         }</p>` +
-        cta(customerLinks.order(opts.orderId), "Track this order"),
+        (opts.repaymentSetup
+          ? `<p><strong>Next step:</strong> set up your repayment now so we can approve your order. Open your order, enter the bank account you'll repay from, then approve the request from our repayment partner Recova.</p>` +
+            cta(customerLinks.order(opts.orderId), "Set up repayment")
+          : cta(customerLinks.order(opts.orderId), "Track this order")),
     ),
   }),
 
@@ -225,12 +228,12 @@ export const emails = {
           : cta(customerLinks.order(opts.orderId), "Track this order")),
     ),
   }),
-  /** Staff-triggered reminder for an approved order whose repayment isn't set up yet. */
+  /** Staff-triggered reminder for an order whose repayment isn't set up yet. */
   repaymentSetup: (name: string, opts: { orderId: string; total: string }) => ({
     subject: "Action needed: set up repayment for your order",
     html: wrap(
-      `<p>Hi ${esc(name)},</p><p>Your order of <strong>${esc(opts.total)}</strong> is approved. ` +
-        `To complete it, please set up your repayment.</p>` +
+      `<p>Hi ${esc(name)},</p><p>Your order of <strong>${esc(opts.total)}</strong> is waiting on your repayment setup. ` +
+        `Please set it up so we can complete your order.</p>` +
         `<ol><li>Open your order using the button below.</li>` +
         `<li>Choose <strong>Set up repayment with Recova</strong> and enter the bank account you'll repay from.</li>` +
         `<li>Approve the request from Recova, our repayment partner.</li></ol>` +

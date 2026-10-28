@@ -7,6 +7,7 @@ import { decryptSecretOrNull, encryptSecret } from "../../common/crypto/reversib
 import { AuthService } from "../auth/auth.service";
 import { requestProductionConsent, requestProductionLookup } from "./recova.client";
 import { assertConsentSubmissionEnabled, consentSetupStatus, CONSENT_VERSION, RECOVA_DATA_KEY, safeConsentUrl } from "./recova-consent.config";
+import { buildInstallments, isPayNow } from "../orders/installments";
 
 export const prepareConsentSchema = z.object({
   txnPin: z.string().regex(/^\d{4}$/),
@@ -23,6 +24,17 @@ const toNaira = (value: bigint) => {
   return Number(value) / 100;
 };
 const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+/** Repayment is set up while the order awaits approval, or after it for older orders. */
+const setupOpen = (order: typeof orders.$inferSelect) =>
+  order.status === "pending_approval" || (!!order.approvedAt && !["cancelled", "rejected"].includes(order.status));
+/** Tenure in the provider's unit, counted from when the order was placed. */
+const loanTenure = (unit: string | undefined, order: typeof orders.$inferSelect, plan: typeof bnplPlans.$inferSelect, lastDue: Date) =>
+  unit === "days" ? Math.ceil((lastDue.getTime() - order.placedAt.getTime()) / 86400000)
+    : plan.durationDays ? Math.max(1, Math.ceil(plan.durationDays / 30)) : plan.durationMonths;
+/** Staff-verified, or the customer's own BVN check matched their declared name and date of birth. */
+const identityConfirmed = (profile: typeof applicantProfiles.$inferSelect) =>
+  profile.verificationStatus === "verified"
+  || (profile.verificationStatus === "submitted" && object(profile.identityLookup)?.verdict === "match");
 
 @Injectable()
 export class RecovaConsentService {
@@ -37,9 +49,10 @@ export class RecovaConsentService {
   async status(userId: string, orderId: string) {
     const order = await this.ownedOrder(userId, orderId);
     const [consent] = await this.db.select().from(recovaConsents).where(eq(recovaConsents.orderId, orderId)).limit(1);
+    const [plan] = await this.db.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
     const setup = consentSetupStatus();
     return { setup: { draftAvailable: setup.draftAvailable, submissionEnabled: setup.submissionEnabled, purpose: setup.purpose },
-      eligible: !!order.approvedAt && !["cancelled", "rejected"].includes(order.status),
+      eligible: setupOpen(order) && !!plan && !isPayNow(plan),
       consent: consent ? this.view(consent) : null };
   }
 
@@ -53,14 +66,19 @@ export class RecovaConsentService {
 
   private async loan(userId: string, orderId: string, db: Db | Tx) {
     const order = await this.ownedOrder(userId, orderId, db);
-    if (!order.approvedAt || ["cancelled", "rejected"].includes(order.status)) throw new BadRequestException("An approved financed order is required.");
-    const schedule = await db.select().from(repaymentSchedules).where(and(eq(repaymentSchedules.orderId, orderId), eq(repaymentSchedules.userId, userId))).orderBy(asc(repaymentSchedules.dueDate));
+    if (!setupOpen(order)) throw new BadRequestException("This order is closed, so repayment can't be set up for it.");
+    const [plan] = await db.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
+    if (!plan) throw new BadRequestException("Repayment plan is missing.");
+    if (isPayNow(plan)) throw new BadRequestException("This order is paid up front, so it doesn't need repayment setup.");
+    // Before approval the schedule is the one approval will write (dated from
+    // when the order was placed); afterwards it is the stored schedule.
+    const schedule = order.approvedAt
+      ? await db.select().from(repaymentSchedules).where(and(eq(repaymentSchedules.orderId, orderId), eq(repaymentSchedules.userId, userId))).orderBy(asc(repaymentSchedules.dueDate))
+      : buildInstallments(order.totalKobo, plan, order.placedAt).map(row => ({ ...row, isPaid: false, amountPaidKobo: 0n }));
     if (!schedule.length || schedule.some(row => row.isPaid || row.amountPaidKobo !== 0n || row.dueDate <= new Date()))
       throw new BadRequestException("Use a new loan with future installments and no existing payments. Existing debt requires reconciliation before onboarding.");
     const [mono] = await db.select({ id: debitMandates.id }).from(debitMandates).where(and(eq(debitMandates.userId, userId), inArray(debitMandates.status, ["awaiting_authorisation", "approved", "active", "paused"]))).limit(1);
     if (mono) throw new ConflictException("An existing Mono mandate must be resolved before setting up Recova repayment.");
-    const [plan] = await db.select().from(bnplPlans).where(eq(bnplPlans.id, order.bnplPlanId)).limit(1);
-    if (!plan) throw new BadRequestException("Repayment plan is missing.");
     return { order, schedule, plan, snapshot: schedule.map(row => ({ dueDate: row.dueDate.toISOString(), amount: toNaira(row.amountKobo) })) };
   }
 
@@ -76,7 +94,7 @@ export class RecovaConsentService {
       if (existing && existing.status !== "draft") throw new ConflictException("This loan already has a consent request. Refresh its status instead.");
       const { order, plan, snapshot, schedule } = await this.loan(userId, orderId, tx);
       const [profile] = await tx.select().from(applicantProfiles).where(eq(applicantProfiles.userId, userId)).limit(1);
-      if (!profile || profile.verificationStatus !== "verified") throw new BadRequestException("Complete identity verification before repayment setup.");
+      if (!profile || !identityConfirmed(profile)) throw new BadRequestException("Confirm your BVN from your account page first (we'll text a code to the phone linked to your BVN), then come back to set up repayment.");
       const bvn = decryptSecretOrNull(profile.bvnEncrypted);
       if (!bvn || !/^\d{11}$/.test(bvn)) throw new BadRequestException("Your verified BVN is unavailable. Please contact support to update your identity record.");
       if (!profile.email || !z.string().email().safeParse(profile.email).success) throw new BadRequestException("Add a valid email address to your profile first.");
@@ -86,7 +104,7 @@ export class RecovaConsentService {
       const payload = { bvn, loanReference: reference, customerID: userId, customerName: profile.fullName,
         customerEmail: profile.email, phoneNumber: profile.phone, loanAmount: toNaira(order.totalKobo),
         totalRepaymentExpected: toNaira(schedule.reduce((sum, row) => sum + row.amountKobo, 0n)),
-        loanTenure: config.tenureUnit === "days" ? Math.ceil((schedule.at(-1)!.dueDate.getTime() - order.approvedAt!.getTime()) / 86400000) : plan.durationMonths,
+        loanTenure: loanTenure(config.tenureUnit, order, plan, schedule.at(-1)!.dueDate),
         linkedAccountNumber: input.accountNumber, preferredRepaymentAccount: input.accountNumber,
         preferredRepaymentBankCBNCode: input.bankCode, repaymentType: config.purpose,
         collectionPaymentSchedules: snapshot.map(row => ({ repaymentDate: row.dueDate, repaymentAmountInNaira: row.amount })) };
@@ -115,7 +133,7 @@ export class RecovaConsentService {
       const payload = JSON.parse(raw);
       // Tenure configuration may have changed since the draft. Do not silently
       // reinterpret it; preparation records the original value.
-      const tenure = config.tenureUnit === "days" ? Math.ceil((schedule.at(-1)!.dueDate.getTime() - order.approvedAt!.getTime()) / 86400000) : plan.durationMonths;
+      const tenure = loanTenure(config.tenureUnit, order, plan, schedule.at(-1)!.dueDate);
       if (payload.loanTenure !== tenure) throw new ConflictException("Tenure configuration changed. Prepare setup again.");
       await tx.update(recovaConsents).set({ status: "submitting", submittedAt: new Date(), updatedAt: new Date() }).where(eq(recovaConsents.id, consent.id));
       return { consent, payload };

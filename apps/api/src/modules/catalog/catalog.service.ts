@@ -91,7 +91,7 @@ export class CatalogService {
     return this.db
       .select()
       .from(bnplPlans)
-      .where(eq(bnplPlans.isActive, true))
+      .where(and(eq(bnplPlans.isActive, true), eq(bnplPlans.testOnly, false)))
       .orderBy(bnplPlans.sortOrder);
   }
 

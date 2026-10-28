@@ -21,13 +21,14 @@ interface BnplPlan {
   id: string;
   name: string;
   durationMonths: number;
+  durationDays: number | null;
   interestPercent: number;
   isPopular: boolean;
   isActive: boolean;
 }
 
 function planMath(plan: BnplPlan, total: number) {
-  const installments = plan.durationMonths === 0 ? 1 : plan.durationMonths;
+  const installments = plan.durationDays || plan.durationMonths === 0 ? 1 : plan.durationMonths;
   const totalWithFee = total + total * (plan.interestPercent / 100);
   return { installments, totalWithFee, installmentAmount: totalWithFee / installments };
 }
@@ -68,7 +69,7 @@ export default function CheckoutPage() {
       router.replace("/account/login?next=/checkout");
       return;
     }
-    if (current.verificationStatus !== "verified") {
+    if (current.verificationStatus !== "verified" && current.verificationStatus !== "submitted") {
       router.replace("/cart");
       return;
     }
@@ -80,8 +81,8 @@ export default function CheckoutPage() {
     }
     setLines(cartLines);
 
-    const base = process.env.NEXT_PUBLIC_API_URL;
-    fetch(`${base}/v1/catalog/bnpl-plans`)
+    // The customer's own plan list also carries any test plans they're allowed.
+    accountFetch("/v1/orders/plans", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : []))
       .then((rows: BnplPlan[]) => {
         setPlans(rows);
@@ -255,7 +256,9 @@ export default function CheckoutPage() {
                           )}
                         </div>
                         <p className="mt-0.5 text-xs text-text-muted">
-                          {m.installments === 1
+                          {plan.durationDays
+                            ? `Pay in full in ${plan.durationDays} day${plan.durationDays === 1 ? "" : "s"}`
+                            : m.installments === 1
                             ? "Pay in full"
                             : `${m.installments} installments of ${formatNairaAmount(m.installmentAmount)}`}
                           {plan.interestPercent > 0 ? ` · ${plan.interestPercent}% fee` : " · no fee"}

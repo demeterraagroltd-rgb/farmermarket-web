@@ -8,6 +8,8 @@ import { RecovaConsentService } from "./recova-consent.service";
 import { consentSetupStatus, RECOVA_DATA_KEY, safeConsentUrl } from "./recova-consent.config";
 import { authenticateRecovaCallback, RecovaWebhookController } from "./recova-webhook.controller";
 import { RecovaProductionController } from "./recova-production.controller";
+import { OrdersService } from "../orders/orders.service";
+import { LedgerService } from "../ledger/ledger.service";
 
 describe("Recova customer consent with real isolated SQL", () => {
   let test: TestDb; let db: Db; let service: RecovaConsentService;
@@ -141,6 +143,54 @@ describe("Recova customer consent with real isolated SQL", () => {
     await db.update(recovaConsents).set({ status: "active" }); await db.delete(auditLogs);
     await expect(controller.resend(reference(), { staffId: staffMember.id } as never)).rejects.toThrow("still waiting");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  describe("ordering before staff approval", () => {
+    const kyc = { getVerificationStatus: async () => "verified" };
+    const ordersService = () => new OrdersService(db, new LedgerService(), auth as never, kyc as never, { send: vi.fn().mockResolvedValue(undefined) } as never);
+    let staffId: string;
+    beforeAll(async () => {
+      [{ id: staffId }] = await db.insert(staff).values({ email: "approver@example.test", fullName: "Approver", passwordHash: "x", role: "admin" }).returning();
+    });
+    async function pendingOrder() {
+      const [plan] = await db.insert(bnplPlans).values({ name: "Test: repay tomorrow", durationMonths: 0, durationDays: 1, testOnly: true }).returning();
+      const placedAt = new Date(Date.now() - 60 * 60 * 1000);
+      const [order] = await db.insert(orders).values({ userId, bnplPlanId: plan.id, status: "pending_approval", subtotalKobo: 100000n, totalKobo: 100000n, placedAt }).returning();
+      await db.update(applicantProfiles).set({ verificationStatus: "submitted", identityLookup: { verdict: "match" } }).where(eq(applicantProfiles.userId, userId));
+      return { order, placedAt, ref: `fm-live-${order.id}` };
+    }
+    afterAll(async () => { await db.update(applicantProfiles).set({ verificationStatus: "verified", identityLookup: null }).where(eq(applicantProfiles.userId, userId)); });
+
+    it("sets up the mandate on the dates approval will write, then approves only once it is active", async () => {
+      const { order, placedAt, ref } = await pendingOrder(); live();
+      const dueDate = new Date(placedAt.getTime() + 86400000).toISOString();
+      expect((await service.prepare(userId, order.id, input)).consent?.schedule).toEqual([{ dueDate, amount: 1000 }]);
+      fetchMock.mockResolvedValue(response({ loanReference: ref, customerID: userId, repaymentType: "Collection", consentApprovalUrl: "https://recova.ng/consent/x" }));
+      await service.submit(userId, order.id, "1234");
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ loanTenure: 1, collectionPaymentSchedules: [{ repaymentDate: dueDate, repaymentAmountInNaira: 1000 }] });
+      await expect(ordersService().approve(order.id, staffId)).rejects.toThrow("isn't active");
+      await db.update(recovaConsents).set({ status: "active" }).where(eq(recovaConsents.reference, ref));
+      await ordersService().approve(order.id, staffId);
+      const [row] = await db.select().from(repaymentSchedules).where(eq(repaymentSchedules.orderId, order.id));
+      expect(row.dueDate.toISOString()).toBe(dueDate);
+    });
+    it("asks unconfirmed customers to confirm their BVN before setting up", async () => {
+      const { order } = await pendingOrder();
+      await db.update(applicantProfiles).set({ identityLookup: { verdict: "partial" } }).where(eq(applicantProfiles.userId, userId));
+      await expect(service.prepare(userId, order.id, input)).rejects.toThrow("Confirm your BVN");
+    });
+    it("cancels the Recova mandate when the order is rejected, and keeps the order if Recova can't confirm", async () => {
+      const { order, ref } = await pendingOrder();
+      await service.prepare(userId, order.id, input);
+      await db.update(recovaConsents).set({ status: "active" }).where(eq(recovaConsents.reference, ref));
+      fetchMock.mockResolvedValue(response("error", 500));
+      await expect(ordersService().reject(order.id, staffId, "Documents unclear")).rejects.toThrow("did not confirm");
+      expect((await db.select().from(orders).where(eq(orders.id, order.id)))[0].status).toBe("pending_approval");
+      fetchMock.mockResolvedValue(response({ status: true }));
+      await ordersService().reject(order.id, staffId, "Documents unclear");
+      expect(fetchMock.mock.calls.at(-1)![0]).toContain(`/Mandate/CancelMandateByLoanReference/${ref}`);
+      expect((await db.select().from(recovaConsents).where(eq(recovaConsents.reference, ref)))[0].status).toBe("cancelled");
+      expect((await db.select().from(orders).where(eq(orders.id, order.id)))[0].status).toBe("rejected");
+    });
   });
   it("requires agreed contract settings and prevents simultaneous Mono collection", () => {
     live(); expect(consentSetupStatus().submissionEnabled).toBe(true);

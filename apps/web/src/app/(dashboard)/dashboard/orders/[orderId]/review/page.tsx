@@ -261,7 +261,7 @@ export default function OrderReviewPage() {
   const { order, applicant, creditPosition, orderHistory, applications, repaymentPreview, readiness, recova } = data;
   const p = applicant.profile;
   const isPending = order.status === "pending_approval";
-  const canApprove = isPending && readiness.kycVerified && (readiness.warnings.length === 0 || ack);
+  const canApprove = isPending && readiness.blockers.length === 0 && (readiness.warnings.length === 0 || ack);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -476,7 +476,7 @@ export default function OrderReviewPage() {
             )}
           </Card>
 
-          {order.approvedAt && (
+          {(order.approvedAt || isPending) && (
             <Card className="p-6">
               <h3 className="mb-3 text-sm font-bold text-text-dark">Recova repayment</h3>
               {recova ? (
@@ -490,6 +490,15 @@ export default function OrderReviewPage() {
               ) : (
                 <p className="text-sm text-text-muted">The customer hasn&apos;t started repayment setup yet.</p>
               )}
+              {!["cancelled", "rejected"].includes(order.status) && !["submitting", "processing", "active"].includes(recova?.status ?? "") && (
+                <div className="mt-4 flex flex-col gap-2">
+                  <Button variant="secondary" onClick={sendSetupLink} disabled={busy}>
+                    {busy ? "Sending…" : "Send repayment setup link"}
+                  </Button>
+                  <p className="text-xs text-text-muted">Emails and texts the customer a link to set up Recova repayment for this order.</p>
+                  {setupLinkResult && <p className="break-all text-xs text-text-medium">{setupLinkResult}</p>}
+                </div>
+              )}
             </Card>
           )}
 
@@ -501,15 +510,6 @@ export default function OrderReviewPage() {
                   This order is already {order.status.replace(/_/g, " ")}
                   {order.rejectionReason ? ` — ${order.rejectionReason}` : ""}.
                 </p>
-                {order.approvedAt && !["cancelled", "rejected"].includes(order.status) && (
-                  <>
-                    <Button variant="secondary" onClick={sendSetupLink} disabled={busy}>
-                      {busy ? "Sending…" : "Send repayment setup link"}
-                    </Button>
-                    <p className="text-xs text-text-muted">Emails and texts the customer a link to set up Recova repayment for this order.</p>
-                    {setupLinkResult && <p className="break-all text-xs text-text-medium">{setupLinkResult}</p>}
-                  </>
-                )}
               </div>
             ) : (
               <div className="flex flex-col gap-4">

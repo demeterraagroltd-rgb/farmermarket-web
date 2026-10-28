@@ -106,7 +106,7 @@ export function HomeStorefront() {
           <div className="rounded-lg border border-gray-200 bg-white p-5">
             <WalletIcon className="mb-3 h-7 w-7 text-primary" />
             <h2 className="font-bold text-text-dark">Grocery credit</h2>
-            <p className="mt-2 text-sm text-text-medium">{session?.verificationStatus === "submitted" ? "Your application is under review. Follow its progress from your account." : session?.verificationStatus === "verified" ? "Check your available credit and choose your next groceries." : "Apply for a limit. Shop after approval."}</p>
+            <p className="mt-2 text-sm text-text-medium">{session?.verificationStatus === "submitted" ? "Your application is in. You can start shopping now; we review it before approving your order." : session?.verificationStatus === "verified" ? "Check your available credit and choose your next groceries." : "Apply, then shop straight away."}</p>
             <Link href={creditHref} className={actionClass + " mt-4 w-full px-2 text-center"}>{creditLabel}</Link>
             <p className="mt-2 text-center text-xs text-text-muted">Credit subject to approval.</p>
           </div>

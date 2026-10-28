@@ -24,7 +24,7 @@ describe("FIFO inventory valuation with actual PostgreSQL migrations",()=>{
   supplier=(await purchase.saveSupplier(supplierSchema.parse({name:"Cost supplier"}),admin)).id;
   const [u]=await t.db.insert(users).values({phone:"08012345670",fullName:"Cost buyer"}).returning();user=u.id;
   const [pl]=await t.db.insert(bnplPlans).values({name:"Pay now",durationMonths:0}).returning();plan=pl.id;
-  checkout=new OrdersService(t.db,{} as never,{assertTxnPin:vi.fn().mockResolvedValue(undefined)} as never,{assertVerified:vi.fn().mockResolvedValue(undefined)} as never,{send:vi.fn().mockResolvedValue(undefined)} as never);
+  checkout=new OrdersService(t.db,{} as never,{assertTxnPin:vi.fn().mockResolvedValue(undefined)} as never,{assertVerified:vi.fn().mockResolvedValue(undefined),assertSubmitted:vi.fn().mockResolvedValue(undefined)} as never,{send:vi.fn().mockResolvedValue(undefined)} as never);
  },20000);
  beforeEach(async()=>{const [product]=await t.db.insert(products).values({name:randomUUID(),imageUrl:"https://example.com/rice.png",categoryId:category,brandId:brand,unit:"carton",priceKobo:50000n,status:"published",stockQuantity:0}).returning();p=product.id;});
  afterAll(async()=>t?.close());

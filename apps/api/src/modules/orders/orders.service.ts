@@ -11,6 +11,7 @@ import {
   repaymentSchedules,
   users,
   auditLogs,
+  recovaConsents,
   type Db,
   type Tx,
 } from "@farmermarket/db";
@@ -25,7 +26,9 @@ import { SMS_SENDER, type SmsSender } from "../integrations/sms/sms.types";
 import { consentSetupStatus } from "../recova/recova-consent.config";
 import { normalisePhone, isNigerianMobile } from "../../common/phone";
 import { recordOrderReservation, recordOrderFulfilment } from "../inventory/inventory-stock";
+import { cancelRecovaForOrder } from "../recova/recova-cancel";
 import { reserveOrderLines, releaseOrderStock } from "./order-inventory";
+import { buildInstallments, canUseTestPlans, isPayNow } from "./installments";
 import type { CreateOrderInput } from "./dto/create-order.dto";
 
 // Hardcoded to match the Flutter app's `Cart` fees exactly (§5.7) — both
@@ -33,8 +36,6 @@ import type { CreateOrderInput } from "./dto/create-order.dto";
 // change is one dashboard edit, not two code changes. Out of scope here.
 const DELIVERY_FEE_KOBO = 50_000n; // ₦500
 const SERVICE_FEE_PERCENT = 3;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** "25 Sep 2026" — the shape the emails and the order pages both read. */
 function shortDate(d: Date | null): string | null {
@@ -66,10 +67,14 @@ export class OrdersService {
   async sendRepaymentSetupLink(orderId: string, staffId?: string) {
     const [order] = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
     if (!order) throw new NotFoundException("Order not found");
-    if (!order.approvedAt || ["cancelled", "rejected"].includes(order.status)) {
-      throw new BadRequestException("Only approved orders need repayment setup.");
+    if ((order.status !== "pending_approval" && !order.approvedAt) || ["cancelled", "rejected"].includes(order.status)) {
+      throw new BadRequestException("Only open orders need repayment setup.");
     }
     if (!this.recovaSetupOffered()) throw new BadRequestException("Recova repayment setup is not configured on this server.");
+    const [consent] = await this.db.select({ status: recovaConsents.status }).from(recovaConsents).where(eq(recovaConsents.orderId, orderId)).limit(1);
+    if (consent && ["submitting", "processing", "active"].includes(consent.status)) {
+      throw new BadRequestException("This order's Recova repayment is already set up.");
+    }
     const [u] = await this.db
       .select({ fullName: users.fullName, email: users.email, phone: users.phone })
       .from(users).where(eq(users.id, order.userId)).limit(1);
@@ -110,6 +115,12 @@ export class OrdersService {
       .limit(1);
     if (!u) return;
     void this.email.send({ to: u.email, ...build(u.fullName ?? "there", u.email) });
+  }
+
+  async plansForUser(userId: string) {
+    const [u] = await this.db.select({ phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1);
+    const rows = await this.db.select().from(bnplPlans).where(eq(bnplPlans.isActive, true)).orderBy(bnplPlans.sortOrder);
+    return rows.filter((p) => !p.testOnly || canUseTestPlans(u?.phone));
   }
 
   async findAllForUser(userId: string) {
@@ -197,6 +208,12 @@ export class OrdersService {
     if (["pending_approval", "confirmed", "rejected"].includes(status)) {
       throw new BadRequestException("Use the approve / reject actions for this transition");
     }
+    if (status === "cancelled") {
+      const [current] = await this.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+      if (current && !["rejected", "cancelled", "delivered", "pending_approval"].includes(current.status)) {
+        await cancelRecovaForOrder(this.db, orderId, "Order cancelled");
+      }
+    }
     return this.db.transaction(async (tx) => {
       const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
       if (!order) throw new NotFoundException("Order not found");
@@ -223,13 +240,17 @@ export class OrdersService {
    */
   async create(userId: string, input: CreateOrderInput) {
     await this.authService.assertTxnPin(userId, input.txnPin);
-    await this.kyc.assertVerified(userId); // 403 NOT_VERIFIED otherwise
+    // Submitted applications can order and set up repayment straight away;
+    // staff check documents before approving the order.
+    await this.kyc.assertSubmitted(userId); // 403 NOT_SUBMITTED otherwise
+    const [buyer] = await this.db.select({ phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1);
+    let repaymentSetup = false;
 
     const response = await this.db.transaction(async (tx) => {
       const resolvedLines = await reserveOrderLines(tx, input.items,input.pickupCenterId);
 
       const [plan] = await tx.select().from(bnplPlans).where(eq(bnplPlans.id, input.bnplPlanId)).limit(1);
-      if (!plan || !plan.isActive) throw new BadRequestException("Selected plan is not available");
+      if (!plan || !plan.isActive || (plan.testOnly && !canUseTestPlans(buyer?.phone))) throw new BadRequestException("Selected plan is not available");
 
       const [centre] = await tx
         .select()
@@ -261,6 +282,7 @@ export class OrdersService {
           pickupDate: input.pickupDate,
         })
         .returning();
+      repaymentSetup = this.recovaSetupOffered() && !isPayNow(plan);
 
       const items = await tx
         .insert(orderItems)
@@ -283,8 +305,13 @@ export class OrdersService {
           .filter(Boolean)
           .join(", "),
         pickupDate: shortDate(response.pickupDate),
+        repaymentSetup,
       }),
     );
+    if (repaymentSetup && this.sms?.live && buyer && isNigerianMobile(normalisePhone(buyer.phone))) {
+      this.sms.send(normalisePhone(buyer.phone), `Farmer Market: we've got your order. Set up your repayment so we can approve it: ${customerLinks.order(response.id)}`)
+        .catch(() => undefined);
+    }
 
     return response;
   }
@@ -313,6 +340,20 @@ export class OrdersService {
       const status = await this.kyc.getVerificationStatus(order.userId);
       if (status !== "verified") {
         throw new BadRequestException("Applicant is not verified — verification is required before approval");
+      }
+      if (!isPayNow(plan)) {
+        // Dates were fixed when the order was placed and the customer may already
+        // have authorized them with Recova. Goods must not go out after a
+        // collection date has already passed.
+        if (buildInstallments(order.totalKobo, plan, order.placedAt)[0].dueDate <= new Date()) {
+          throw new BadRequestException("This order's first repayment date has already passed. Reject it and ask the customer to order again.");
+        }
+        if (consentSetupStatus().submissionEnabled) {
+          const [consent] = await tx.select({ status: recovaConsents.status }).from(recovaConsents).where(eq(recovaConsents.orderId, orderId)).limit(1);
+          if (consent?.status !== "active") {
+            throw new BadRequestException("The customer's Recova repayment mandate isn't active yet. Approve once it shows as active.");
+          }
+        }
       }
 
       let [profile] = await tx.select().from(creditProfiles).where(eq(creditProfiles.userId, order.userId)).limit(1);
@@ -377,23 +418,19 @@ export class OrdersService {
         deliverySlot: updated.deliverySlot,
         pickupCenter: [updated.pickupCenterName, updated.pickupCenterAddress].filter(Boolean).join(", "),
         pickupDate: shortDate(updated.pickupDate),
-        repaymentSetup: this.recovaSetupOffered(),
+        // Repayment is set up before approval now, so approval only confirms.
+        repaymentSetup: false,
       }),
     );
-    // The email above carries the setup link; add an SMS so a buyer who
-    // doesn't check email still learns the order needs repayment setup.
-    if (this.recovaSetupOffered()) {
-      const [u] = await this.db.select({ phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1);
-      const phone = u ? normalisePhone(u.phone) : "";
-      if (this.sms?.live && isNigerianMobile(phone)) {
-        this.sms.send(phone, `Farmer Market: your order is approved. Set up your repayment to complete it: ${customerLinks.order(orderId)}`)
-          .catch(() => undefined);
-      }
-    }
     return { ...response, userId, deliverySlot: updated.deliverySlot };
   }
 
   async reject(orderId: string, staffId: string, reason: string) {
+    const [current] = await this.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!current) throw new NotFoundException("Order not found");
+    if (current.status !== "pending_approval") throw new BadRequestException(`Order is already ${current.status}`);
+    // Stop Recova first; if it can't confirm, the order stays pending for a retry.
+    await cancelRecovaForOrder(this.db, orderId, `Order rejected: ${reason}`);
     const result = await this.db.transaction(async (tx) => {
       const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
       if (!order) throw new NotFoundException("Order not found");
@@ -408,32 +445,9 @@ export class OrdersService {
     return result;
   }
 
-  /**
-   * The installment math shared by the real schedule (`createRepaymentSchedule`,
-   * written on approval) and the read-only preview shown on a still-pending
-   * order (`previewInstallments`, below) — same numbers, one place they can
-   * drift out of sync.
-   */
-  private buildInstallments(totalKobo: bigint, plan: typeof bnplPlans.$inferSelect) {
-    const installments = plan.durationMonths === 0 ? 1 : plan.durationMonths;
-    const totalWithFee = totalKobo + percentOfKobo(totalKobo, plan.interestPercent);
-    const base = totalWithFee / BigInt(installments);
-    const remainder = totalWithFee - base * BigInt(installments);
-
-    return Array.from({ length: installments }, (_, i) => {
-      const n = i + 1;
-      const amountKobo = n === installments ? base + remainder : base; // remainder absorbed by the last installment
-      const dueDate =
-        plan.durationMonths === 0
-          ? new Date() // Pay Now — due immediately
-          : new Date(Date.now() + n * 30 * DAY_MS);
-      return { installmentNumber: n, totalInstallments: installments, amountKobo, dueDate };
-    });
-  }
-
-  /** Order Review workspace: what the schedule *would* look like on approval. */
-  previewInstallments(totalKobo: bigint, plan: typeof bnplPlans.$inferSelect) {
-    return this.buildInstallments(totalKobo, plan).map((i) => ({
+  /** Order Review workspace: what the schedule *will* look like on approval. */
+  previewInstallments(totalKobo: bigint, plan: typeof bnplPlans.$inferSelect, placedAt: Date) {
+    return buildInstallments(totalKobo, plan, placedAt).map((i) => ({
       ...i,
       amount: koboToNaira(i.amountKobo),
     }));
@@ -445,7 +459,7 @@ export class OrdersService {
     plan: typeof bnplPlans.$inferSelect,
     userId: string,
   ) {
-    const rows = this.buildInstallments(order.totalKobo, plan).map((i) => ({
+    const rows = buildInstallments(order.totalKobo, plan, order.placedAt).map((i) => ({
       ...i,
       orderId: order.id,
       userId,

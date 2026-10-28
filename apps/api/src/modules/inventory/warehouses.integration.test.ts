@@ -19,7 +19,7 @@ describe('Warehouse inventory using actual PostgreSQL migrations',()=>{
   const [s]=await t.db.insert(staff).values({email:'warehouse@test.com',passwordHash:'x',fullName:'Warehouse Admin',role:'admin'}).returning();actor=s.id;
   const [u]=await t.db.insert(users).values({phone:'08012345679',fullName:'Buyer'}).returning();user=u.id;
   const [pl]=await t.db.insert(bnplPlans).values({name:'Pay now',durationMonths:0}).returning();plan=pl.id;
-  checkout=new OrdersService(t.db,{} as never,{assertTxnPin:vi.fn().mockResolvedValue(undefined)} as never,{assertVerified:vi.fn().mockResolvedValue(undefined)} as never,{send:vi.fn().mockResolvedValue(undefined)} as never);
+  checkout=new OrdersService(t.db,{} as never,{assertTxnPin:vi.fn().mockResolvedValue(undefined)} as never,{assertVerified:vi.fn().mockResolvedValue(undefined),assertSubmitted:vi.fn().mockResolvedValue(undefined)} as never,{send:vi.fn().mockResolvedValue(undefined)} as never);
  },20000);
  beforeEach(async()=>{const [pr]=await t.db.insert(products).values({name:'Rice',imageUrl:'https://example.com/rice.png',priceKobo:100000n,categoryId:category,brandId:brand,unit:'bag',stockQuantity:10,status:'published'}).returning();p=pr.id;});
  afterAll(async()=>t?.close());

@@ -51,14 +51,21 @@ export async function requestProductionConsentResend(reference: string) {
   return sendRequest(baseUrl, token, "production", "resend-consent", reference);
 }
 
-async function sendRequest(baseUrl: string, token: string, environment: "staging" | "production", operation: SandboxOperation, reference: string, payload?: unknown) {
+/** Cancels a customer's mandate when their order will not go ahead. */
+export async function requestProductionCancel(reference: string, comment: string) {
+  const { baseUrl, token } = productionConnection();
+  return sendRequest(baseUrl, token, "production", "cancel-mandate", reference, undefined, comment);
+}
+
+async function sendRequest(baseUrl: string, token: string, environment: "staging" | "production", operation: SandboxOperation, reference: string, payload?: unknown,
+  cancelComment = "Farmer Market sandbox test cleanup") {
   const ref = encodeURIComponent(reference);
   const path = {
     "create-consent": "/ConsentRequest/CreateConsentRequest",
     consent: `/ConsentRequest/RetrieveConsentRequestByLoanReference/${ref}`,
     mandate: `/Mandate/RetrieveMandateByLoanReference/${ref}`,
     "resend-consent": `/ConsentRequest/ResendConsentRequestMessage/${ref}`,
-    "cancel-mandate": `/Mandate/CancelMandateByLoanReference/${ref}?comment=${encodeURIComponent("Farmer Market sandbox test cleanup")}`,
+    "cancel-mandate": `/Mandate/CancelMandateByLoanReference/${ref}?comment=${encodeURIComponent(cancelComment)}`,
   }[operation];
   const isPost = POSTS.has(operation);
   try {
