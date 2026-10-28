@@ -1,0 +1,60 @@
+.page {min-height:100vh;background:#f6f8f6;padding:32px 24px 64px;color:#183b2b;--color-text-muted:#64796d;--color-dark-border:#dce5df;--shadow-card:0 3px 12px #183b2b04;}
+.container {max-width:1160px;margin:auto;}
+.breadcrumb {display:flex;gap:12px;font-size:12px;color:#687b70;margin-bottom:24px;}
+.breadcrumb span {color:#a1b0a7;}
+.hero {display:flex;align-items:center;justify-content:space-between;gap:24px;padding:30px 34px;background:#e8f0e7;border:1px solid #dce7da;border-radius:20px;}
+.identity {display:flex;align-items:center;gap:20px;}
+.avatar {display:grid;place-items:center;width:64px;height:64px;border-radius:20px;background:#fff;color:#276543;font-weight:650;font-size:22px;border:1px solid #d5e3d2;flex-shrink:0;}
+.eyebrow {font-size:10px;font-weight:700;letter-spacing:.13em;color:#5f7a66;}
+.hero h1 {font-size:30px;line-height:1.25;letter-spacing:-1px;font-weight:650;margin:7px 0;}
+.heroCopy {font-size:13px;color:#536e5e;line-height:1.7;}
+.shopLink {display:flex;align-items:center;justify-content:center;gap:20px;white-space:nowrap;background:#1a7048;color:white;border-radius:10px;padding:13px 18px;font-size:12px;font-weight:600;transition:background .2s;}
+.shopLink:hover {background:#115736;}
+.summary {display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:24px 0 30px;}
+.summaryCard {display:flex;align-items:flex-start;gap:16px;padding:23px;background:white;border:1px solid #e1e8e2;border-radius:14px;}
+.statIcon {display:grid;place-items:center;background:#eff5ee;color:#3f7452;border-radius:12px;width:42px;height:42px;font-size:22px;flex-shrink:0;}
+.summaryCard p {font-size:12px;color:#62756a;}
+.summaryCard strong {display:block;font-size:28px;line-height:1.3;letter-spacing:-.7px;margin:7px 0;}
+.summaryCard .statusValue {font-size:22px;line-height:1.65;letter-spacing:-.4px;}
+.summaryCard small {font-size:11px;color:#6b7b71;}
+.workspace {display:grid;grid-template-columns:250px minmax(0,1fr);gap:26px;align-items:start;}
+.profile {background:white;border:1px solid #e1e8e2;border-radius:16px;padding:26px 22px;}
+.profileAvatar {width:52px;height:52px;display:grid;place-items:center;background:#e9f2e7;border-radius:50%;font-size:22px;font-weight:600;color:#3c704d;margin-bottom:16px;}
+.profile h2 {font-size:15px;font-weight:650;line-height:1.6;}
+.profile > p:not(.eyebrow) {font-size:12px;color:#64796d;margin:5px 0 13px;}
+.profileDivider {height:1px;background:#e8ede9;margin:23px 0;}
+.sideLink {display:flex;justify-content:space-between;font-size:12px;padding:14px 0;color:#47614f;}
+.sideLink:hover {color:#187348;}
+.content {min-width:0;}
+.verification {background:#f0f7f0;border-color:#d8e7d8;box-shadow:none;border-radius:12px;}
+.verification p {line-height:1.7;font-size:12px;}
+.sectionHeading {display:flex;justify-content:space-between;align-items:center;gap:16px;margin:28px 0 16px;}
+.sectionHeading h2 {font-size:18px;font-weight:650;letter-spacing:-.4px;}
+.sectionHeading p {font-size:12px;color:#64796d;margin-top:5px;}
+.liveDot {font-size:10px;color:#627768;white-space:nowrap;}
+.liveDot:before {content:'';display:inline-block;width:6px;height:6px;background:#41875a;border-radius:50%;margin-right:6px;}
+.activityCard {overflow:hidden;border:1px solid #dfe7e0;border-radius:14px;box-shadow:0 4px 16px #173b2703;}
+.activityCard [role=tablist] {padding:6px 16px 0;border-color:#e7ede8;}
+.activityCard [role=tab] {padding:14px 12px;font-size:12px;}
+.rows {display:flex;flex-direction:column;}
+.rows > * + * {border-top:1px solid #e7ede8;}
+.orderRow {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:20px 12px;border-radius:8px;transition:background .15s;}
+.orderRow:hover {background:#f4f8f3;}
+.orderRow p:first-child {font-size:13px;}
+.orderRow > div:first-child > div {flex-wrap:wrap;}
+.orderRow > div:last-child > p {font-size:16px;}
+.security {margin-top:22px;background:white;border:1px solid #dfe7e0;border-radius:14px;padding:20px;scroll-margin-top:90px;}
+.security summary {list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:18px;}
+.security summary::-webkit-details-marker {display:none;}
+.security strong {font-size:13px;font-weight:600;display:block;}
+.security small {display:block;font-size:11px;color:#64796d;margin-top:6px;line-height:1.6;}
+.securityAction {font-size:11px;color:#27734b;white-space:nowrap;}
+.securityAction > span {margin-left:8px;}
+.security > div {border:0;box-shadow:none;padding:0;margin-top:24px;}
+.security input {min-height:44px;}
+.footerNote {text-align:center;font-size:11px;color:#718477;margin-top:28px;}
+.emptyLink {display:block;text-align:center;font-size:12px;color:#1a7048;font-weight:600;margin:18px 0 6px;}
+.activity {scroll-margin-top:90px;}
+.page a:focus-visible,.page button:focus-visible,.security summary:focus-visible {outline:3px solid #51986d;outline-offset:4px;}
+@media(max-width:900px) {.workspace {grid-template-columns:210px minmax(0,1fr);gap:18px;}.hero {padding:24px;}.hero h1 {font-size:26px;}.avatar {display:none;}.summaryCard {padding:18px;gap:10px;}.liveDot {display:none;}}
+@media(max-width:640px) {.page {padding:22px 16px 40px;}.breadcrumb {margin-bottom:18px;}.hero {align-items:flex-start;flex-direction:column;gap:20px;padding:24px;border-radius:16px;}.hero h1 {font-size:27px;}.heroCopy {font-size:12px;}.shopLink {width:100%;justify-content:space-between;}.summary {grid-template-columns:1fr;gap:10px;margin:18px 0;}.summaryCard {align-items:center;padding:16px;}.summaryCard > div {display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 16px;width:100%;}.summaryCard strong,.summaryCard .statusValue {grid-column:2;grid-row:1 / 3;font-size:23px;margin:0;}.summaryCard small {grid-row:2;}.workspace {grid-template-columns:1fr;}.profile {padding:20px;}.profileAvatar {float:left;width:44px;height:44px;margin:0 14px 12px 0;}.profile h2 {font-size:14px;}.profile > p:not(.eyebrow) {margin-bottom:10px;}.profileDivider {clear:both;margin:16px 0;}.profile .eyebrow,.profile .sideLink {display:none;}.profileDivider:nth-of-type(3) {display:none;}.sectionHeading {margin-top:24px;}.orderRow {padding:16px 0;}.security {padding:18px;}}

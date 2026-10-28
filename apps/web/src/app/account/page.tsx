@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import styles from "./account.module.css";
 import { useRouter } from "next/navigation";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { Card, EmptyState } from "../../components/ui/Card";
@@ -216,25 +217,41 @@ export default function AccountPage() {
   return (
     <>
       <SiteHeader />
-      <main className="min-h-screen bg-white px-6 py-12">
-        <div className="mx-auto max-w-5xl">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-text-muted">Welcome back</p>
-              <div className="mt-0.5 flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight text-text-dark">
-                  {session.fullName || session.phone}
-                </h1>
-                {credit && <Badge tone="gold">Tier {credit.tier}</Badge>}
+      <main className={styles.page}>
+        <div className={styles.container}>
+          <div className={styles.breadcrumb}>Farmer Market <span>/</span> My account</div>
+          <section className={styles.hero}>
+            <div className={styles.identity}>
+              <div className={styles.avatar} aria-hidden="true">{(session.fullName || session.phone).split(" ").map((part) => part[0]).slice(0, 2).join("")}</div>
+              <div>
+                <p className={styles.eyebrow}>YOUR PERSONAL MARKETPLACE</p>
+                <h1>Welcome back, {session.fullName?.split(" ")[0] || "there"}.</h1>
+                <p className={styles.heroCopy}>Good food. Flexible payments. Everything in one place.</p>
               </div>
             </div>
-            <Button variant="ghost" onClick={handleSignOut}>
-              Sign out
-            </Button>
+            <Link href="/marketplace" className={styles.shopLink}>Browse marketplace <span aria-hidden="true">↗</span></Link>
+          </section>
+          <div className={styles.summary}>
+            <div className={styles.summaryCard}><span className={styles.statIcon} aria-hidden="true">▣</span><div><p>Total orders</p><strong>{orders === null ? "—" : orders.length}</strong><small>Your shopping journey</small></div></div>
+            <div className={styles.summaryCard}><span className={styles.statIcon} aria-hidden="true">◷</span><div><p>Upcoming repayments</p><strong>{repayments === null ? "—" : upcoming.length}</strong><small>{upcoming.length ? `Next due ${formatDate(upcoming[0].dueDate)}` : "No payments scheduled"}</small></div></div>
+            <div className={styles.summaryCard}><span className={styles.statIcon} aria-hidden="true">✓</span><div><p>Account status</p><strong className={styles.statusValue}>{verification.label}</strong><small>{credit && credit.tier.toLowerCase() !== "none" ? `Tier ${credit.tier}` : "Your Farmer Market account"}</small></div></div>
           </div>
-
+          <div className={styles.workspace}>
+          <aside className={styles.profile}>
+            <div className={styles.profileAvatar} aria-hidden="true">{(session.fullName || session.phone).slice(0, 1)}</div>
+            <h2>{session.fullName || "My account"}</h2>
+            <p>{session.phone}</p>
+            <Badge tone={verification.tone}>{verification.label}</Badge>
+            <div className={styles.profileDivider} />
+            <p className={styles.eyebrow}>ACCOUNT OVERVIEW</p>
+            <a href="#account-activity" className={styles.sideLink}>Orders & repayments <span aria-hidden="true">↗</span></a>
+            <a href="#account-security" className={styles.sideLink}>Password & security <span aria-hidden="true">↗</span></a>
+            <div className={styles.profileDivider} />
+            <Button variant="ghost" onClick={handleSignOut}>Sign out <span aria-hidden="true">↗</span></Button>
+          </aside>
+          <div className={styles.content}>
           {/* Verification — the thing that gates everything else, so it leads. */}
-          <Card className="mt-6 p-5">
+          <Card className={`${styles.verification} p-5`}>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <Badge tone={verification.tone}>{verification.label}</Badge>
@@ -350,15 +367,16 @@ export default function AccountPage() {
             </Card>
           )}
 
-          <ChangePasswordCard />
-
-          <Card className="mt-6 overflow-hidden">
+          <section id="account-activity" className={styles.activity}>
+          <div className={styles.sectionHeading}><div><h2>Your activity</h2><p>Keep track of your orders and payment plans.</p></div><span className={styles.liveDot}>Account overview</span></div>
+          <Card className={styles.activityCard}>
             <Tabs
               tabs={[
                 { id: "orders", label: "Orders" },
                 { id: "repayments", label: "Repayments" },
               ]}
-              defaultTab={tab}
+              activeTab={tab ?? "orders"}
+              onTabChange={(id) => { setTab(id); window.history.replaceState(null, "", `/account?tab=${id}`); }}
             >
               {(active) =>
                 active === "orders" ? (
@@ -372,6 +390,14 @@ export default function AccountPage() {
               }
             </Tabs>
           </Card>
+          </section>
+          <details id="account-security" className={styles.security}>
+            <summary><span><strong>Password & security</strong><small>Manage your password and keep your account protected.</small></span><span className={styles.securityAction}>Manage <span aria-hidden="true">＋</span></span></summary>
+            <ChangePasswordCard />
+          </details>
+          <p className={styles.footerNote}>Fresh essentials. A little more peace of mind.</p>
+          </div>
+          </div>
         </div>
       </main>
     </>
@@ -379,24 +405,24 @@ export default function AccountPage() {
 }
 
 function OrdersPanel({ orders, error }: { orders: Order[] | null; error: string | null }) {
-  if (error) return <p className="text-sm text-error">{error}</p>;
-  if (orders === null) return <p className="text-sm text-text-muted">Loading orders…</p>;
+  if (error) return <p role="alert" className="text-sm text-error">{error}</p>;
+  if (orders === null) return <p role="status" className="text-sm text-text-muted">Loading orders…</p>;
   if (orders.length === 0) {
-    return <EmptyState label="No orders yet — browse the marketplace to place your first one." />;
+    return <div><EmptyState label="Your next good meal starts here. Place your first order to get started." /><Link href="/marketplace" className={styles.emptyLink}>Explore the marketplace →</Link></div>;
   }
 
   return (
-    <div className="flex flex-col divide-y divide-dark-border/40">
+    <div className={styles.rows}>
       {orders.map((order) => (
         <Link
           key={order.id}
           href={`/account/orders/${order.id}`}
-          className="flex flex-wrap items-center justify-between gap-3 py-4 transition-colors hover:bg-surface/60"
+          className={styles.orderRow}
         >
           <div>
             <div className="flex items-center gap-2">
               <p className="font-semibold text-text-dark">
-                {order.items.length} item{order.items.length === 1 ? "" : "s"}
+                Order #{order.id.slice(-6).toUpperCase()}
               </p>
               <Badge tone={ORDER_STATUS_TONE[order.status] ?? "neutral"}>
                 {orderStatusLabel(order.status)}
@@ -430,7 +456,7 @@ function RepaymentsPanel({ repayments }: { repayments: Repayment[] | null }) {
   }
 
   return (
-    <div className="flex flex-col divide-y divide-dark-border/40">
+    <div className={styles.rows}>
       {repayments.map((r) => (
         <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
           <div>
@@ -529,8 +555,8 @@ function ChangePasswordCard() {
         />
         <div className="sm:col-span-3">
           <p className="text-xs text-text-muted">{PASSWORD_HELP}</p>
-          {error && <p className="mt-2 whitespace-pre-line text-sm text-error">{error}</p>}
-          {saved && <p className="mt-2 text-sm text-success">Password changed.</p>}
+          {error && <p role="alert" className="mt-2 whitespace-pre-line text-sm text-error">{error}</p>}
+          {saved && <p role="status" className="mt-2 text-sm text-success">Password changed.</p>}
           <Button type="submit" variant="secondary" disabled={loading} className="mt-3">
             {loading ? "Saving…" : "Change password"}
           </Button>
