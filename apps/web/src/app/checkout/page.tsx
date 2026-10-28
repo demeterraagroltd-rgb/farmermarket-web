@@ -81,6 +81,19 @@ export default function CheckoutPage() {
     }
     setLines(cartLines);
 
+    // The saved session can say "no code yet" after the customer set one in
+    // the app or during repayment setup. Ask the server so checkout shows
+    // the right form instead of failing with "already set".
+    accountFetch("/v1/auth/customer/me", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me: { hasTxnPin?: boolean } | null) => {
+        if (typeof me?.hasTxnPin === "boolean" && me.hasTxnPin !== current.hasTxnPin) {
+          patchCustomerSession({ hasTxnPin: me.hasTxnPin });
+          setSession((s) => (s ? { ...s, hasTxnPin: me.hasTxnPin as boolean } : s));
+        }
+      })
+      .catch(() => undefined);
+
     // The customer's own plan list also carries any test plans they're allowed.
     accountFetch("/v1/orders/plans", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : []))
@@ -146,7 +159,19 @@ export default function CheckoutPage() {
           method: "POST",
           body: JSON.stringify({ pin }),
         });
-        if (!pinRes.ok) throw new Error(await readError(pinRes));
+        if (!pinRes.ok) {
+          const message = await readError(pinRes);
+          if (/already set/i.test(message)) {
+            // Switch to "enter your code"; don't place the order with a code
+            // the customer meant as a new one.
+            patchCustomerSession({ hasTxnPin: true });
+            setSession((s) => (s ? { ...s, hasTxnPin: true } : s));
+            setPin("");
+            setPinConfirm("");
+            throw new Error("You already have a transaction code. Enter that code to place your order.");
+          }
+          throw new Error(message);
+        }
         patchCustomerSession({ hasTxnPin: true });
       }
 
@@ -288,6 +313,7 @@ export default function CheckoutPage() {
                 label={needsNewPin ? "New code" : "Transaction code"}
                 inputMode="numeric"
                 type="password"
+                autoComplete={needsNewPin ? "new-password" : "off"}
                 maxLength={4}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
@@ -297,6 +323,7 @@ export default function CheckoutPage() {
                   label="Confirm code"
                   inputMode="numeric"
                   type="password"
+                  autoComplete={needsNewPin ? "new-password" : "off"}
                   maxLength={4}
                   value={pinConfirm}
                   onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ""))}
