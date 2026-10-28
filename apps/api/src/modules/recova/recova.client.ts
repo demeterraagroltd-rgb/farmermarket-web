@@ -43,6 +43,14 @@ export async function requestProductionConsent(reference: string, payload: unkno
   return sendRequest(baseUrl, token, "production", "create-consent", reference, payload);
 }
 
+/** Asks Recova to send the approval token again. Recova delivers it through
+ * our SMS webhook, so this needs the same settings as a live submission. */
+export async function requestProductionConsentResend(reference: string) {
+  assertConsentSubmissionEnabled();
+  const { baseUrl, token } = productionConnection();
+  return sendRequest(baseUrl, token, "production", "resend-consent", reference);
+}
+
 async function sendRequest(baseUrl: string, token: string, environment: "staging" | "production", operation: SandboxOperation, reference: string, payload?: unknown) {
   const ref = encodeURIComponent(reference);
   const path = {

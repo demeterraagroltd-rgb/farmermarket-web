@@ -11,6 +11,7 @@ type Status = { enabled: boolean; tokenConfigured: boolean; configurationReady: 
   customerSetup?: { draftAvailable: boolean; submissionEnabled: boolean; issues: string[] } };
 type ConsentRow = { reference: string; status: string; purpose: string; bankCode: string; accountLast4: string;
   submittedAt: string | null; createdAt: string; orderId: string; total: number; customerName: string | null };
+const RESENDABLE = new Set(["awaiting_consent", "needs_review", "expired"]);
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) : "—";
 export function RecovaProduction() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -19,6 +20,7 @@ export function RecovaProduction() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
   const [consents, setConsents] = useState<ConsentRow[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   async function loadConsents() {
     try {
       const response = await apiFetch("/v1/admin/recova/production/consents", { cache: "no-store" });
@@ -34,6 +36,20 @@ export function RecovaProduction() {
       if (!response.ok) throw new Error(body.message ?? `Request failed (${response.status})`);
       if (path === "status") setStatus(body);
       else setResult(body);
+    } catch (e) { setError(e instanceof Error ? e.message : "Request failed"); }
+    finally { setBusy(false); }
+  }
+  async function resend(row: ConsentRow) {
+    if (!window.confirm(`Ask Recova to text ${row.customerName ?? "this customer"} their approval token again?`)) return;
+    setBusy(true); setError(null); setResult(null); setNotice(null);
+    try {
+      const response = await apiFetch(`/v1/admin/recova/production/consent/${encodeURIComponent(row.reference)}/resend`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message ?? `Request failed (${response.status})`);
+      setResult(body);
+      setNotice(body.ok
+        ? `Recova accepted the resend for ${row.customerName ?? "the customer"}. The SMS should arrive within a few minutes.`
+        : `Recova did not accept the resend (HTTP ${body.httpStatus}). See the response below.`);
     } catch (e) { setError(e instanceof Error ? e.message : "Request failed"); }
     finally { setBusy(false); }
   }
@@ -74,9 +90,13 @@ export function RecovaProduction() {
             <td className="p-2">{c.purpose} · ••{c.accountLast4}</td>
             <td className="p-2 whitespace-nowrap">{when(c.submittedAt)}</td>
             <td className="p-2 break-all font-mono text-xs">{c.reference}</td>
-            <td className="p-2"><button className="text-sm font-semibold text-emerald-800 underline" disabled={busy} onClick={() => setReference(c.reference)}>Use below</button></td>
+            <td className="p-2 space-y-1">
+              <button className="block text-sm font-semibold text-emerald-800 underline" disabled={busy} onClick={() => setReference(c.reference)}>Use below</button>
+              {RESENDABLE.has(c.status) && <button className="block whitespace-nowrap text-sm font-semibold text-emerald-800 underline disabled:opacity-40" disabled={busy} onClick={() => void resend(c)}>Resend token</button>}
+            </td>
           </tr>)}</tbody>
         </table></div>}
+      {notice && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
     </div>
     <div className="border-t pt-5">
     <h3 className="mb-2 font-semibold">Read an existing Recova record</h3>

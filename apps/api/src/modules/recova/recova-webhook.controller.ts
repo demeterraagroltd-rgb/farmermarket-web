@@ -1,7 +1,7 @@
 import { Body, Controller, Headers, HttpCode, Inject, Logger, Post, UnauthorizedException, NotFoundException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { z } from "zod";
 import { applicantProfiles, recovaCallbacks, recovaConsents, type Db } from "@farmermarket/db";
 import { DB } from "../../db/db.module";
@@ -13,6 +13,8 @@ const baseSchema = z.object({ loanReference: z.string().regex(/^fm-live-[a-f0-9-
 const smsSchema = baseSchema.extend({ phoneNumber: z.string().regex(/^\+?\d{10,15}$/), message: z.string().min(1).max(2000) }).strict();
 const mandateSchema = baseSchema.strict();
 const log = new Logger("RecovaWebhook");
+/** Identical SMS callbacks inside this window are provider retries. */
+const RETRY_WINDOW_MS = 10 * 60 * 1000;
 /** Rejections are logged with a reason (never the header value) so a provider's
  * 401 can be diagnosed from the server logs. */
 export function authenticateRecovaCallback(secret: string | undefined, route = "callback") {
@@ -38,9 +40,15 @@ export class RecovaWebhookController {
     @Inject(SMS_SENDER) private readonly sms: SmsSender) {}
 
   private async known(reference: string, institution: string) {
-    if (institution !== process.env.RECOVA_PRODUCTION_INSTITUTION_CODE) throw new UnauthorizedException();
+    if (institution !== process.env.RECOVA_PRODUCTION_INSTITUTION_CODE) {
+      log.warn(`Rejected Recova callback for ${reference}: institution code does not match ours`);
+      throw new UnauthorizedException();
+    }
     const [row] = await this.db.select().from(recovaConsents).where(eq(recovaConsents.reference, reference)).limit(1);
-    if (!row || row.status === "draft") throw new NotFoundException("Submitted consent reference not found.");
+    if (!row || row.status === "draft") {
+      log.warn(`Rejected Recova callback for ${reference}: no submitted consent has this reference`);
+      throw new NotFoundException("Submitted consent reference not found.");
+    }
     return row;
   }
 
@@ -51,12 +59,23 @@ export class RecovaWebhookController {
     authenticateRecovaCallback(secret, "sms");
     const row = await this.known(body.loanReference, body.institutionCode);
     const [profile] = await this.db.select({ phone: applicantProfiles.phone }).from(applicantProfiles).where(eq(applicantProfiles.userId, row.userId)).limit(1);
-    if (!profile || phone(profile.phone) !== phone(body.phoneNumber)) throw new UnauthorizedException("Recipient does not match the loan customer.");
-    if (!this.sms.live) throw new ServiceUnavailableException("Live SMS delivery is not configured.");
+    if (!profile || phone(profile.phone) !== phone(body.phoneNumber)) {
+      log.warn(`Rejected Recova sms for ${row.reference}: recipient does not match the customer's phone on file`);
+      throw new UnauthorizedException("Recipient does not match the loan customer.");
+    }
+    if (!this.sms.live) {
+      log.warn(`Rejected Recova sms for ${row.reference}: live SMS delivery is not configured`);
+      throw new ServiceUnavailableException("Live SMS delivery is not configured.");
+    }
     const eventKey = createHash("sha256").update(JSON.stringify([body.loanReference, phone(body.phoneNumber), body.message])).digest("hex");
     const [receipt] = await this.db.insert(recovaCallbacks).values({ eventKey, reference: row.reference, kind: "sms", outcome: "sending" })
       .onConflictDoNothing().returning();
-    if (!receipt) {
+    // The same message arriving after the retry window is a deliberate resend
+    // (our staff button or Recova's dashboard), so it is sent again.
+    const [resend] = receipt ? [] : await this.db.update(recovaCallbacks).set({ outcome: "sending", createdAt: new Date() })
+      .where(and(eq(recovaCallbacks.eventKey, eventKey), eq(recovaCallbacks.outcome, "delivered"), lt(recovaCallbacks.createdAt, new Date(Date.now() - RETRY_WINDOW_MS))))
+      .returning();
+    if (!receipt && !resend) {
       const [previous] = await this.db.select().from(recovaCallbacks).where(eq(recovaCallbacks.eventKey, eventKey));
       if (previous?.outcome !== "delivered") throw new ConflictException("SMS delivery is unconfirmed; staff review is required. The consent link remains available in the customer's account.");
       return { ok: true, duplicate: true };
@@ -64,8 +83,10 @@ export class RecovaWebhookController {
     try {
       await this.sms.send(phone(profile.phone), body.message);
       await this.db.update(recovaCallbacks).set({ outcome: "delivered" }).where(eq(recovaCallbacks.eventKey, eventKey));
+      log.log(`Recova sms for ${row.reference} handed to the SMS provider${resend ? " (resend)" : ""}`);
       return { ok: true };
     } catch {
+      log.warn(`Recova sms for ${row.reference} was not confirmed by the SMS provider; marked for review`);
       await this.db.update(recovaCallbacks).set({ outcome: "needs_review" }).where(eq(recovaCallbacks.eventKey, eventKey));
       throw new ServiceUnavailableException("SMS delivery is unconfirmed. Do not resend without checking delivery.");
     }

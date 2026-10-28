@@ -1,12 +1,13 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { applicantProfiles, bnplPlans, orders, recovaCallbacks, recovaConsents, repaymentSchedules, users, type Db } from "@farmermarket/db";
+import { applicantProfiles, auditLogs, bnplPlans, orders, recovaCallbacks, recovaConsents, repaymentSchedules, staff, users, type Db } from "@farmermarket/db";
 import { createTestDb, type TestDb } from "../../test/test-db";
 import { encryptSecret } from "../../common/crypto/reversible-secret";
 import { RecovaConsentService } from "./recova-consent.service";
 import { consentSetupStatus, RECOVA_DATA_KEY, safeConsentUrl } from "./recova-consent.config";
 import { authenticateRecovaCallback, RecovaWebhookController } from "./recova-webhook.controller";
+import { RecovaProductionController } from "./recova-production.controller";
 
 describe("Recova customer consent with real isolated SQL", () => {
   let test: TestDb; let db: Db; let service: RecovaConsentService;
@@ -122,6 +123,24 @@ describe("Recova customer consent with real isolated SQL", () => {
     expect(await hook.sendSms(process.env.RECOVA_WEBHOOK_SECRET, body)).toMatchObject({ duplicate: true });
     expect(sender.send).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(await db.select().from(recovaCallbacks))).not.toContain(body.message);
+    // The same message after the retry window is a deliberate resend.
+    await db.update(recovaCallbacks).set({ createdAt: new Date(Date.now() - 11 * 60 * 1000) });
+    expect(await hook.sendSms(process.env.RECOVA_WEBHOOK_SECRET, body)).toEqual({ ok: true });
+    expect(sender.send).toHaveBeenCalledTimes(2);
+    expect(await hook.sendSms(process.env.RECOVA_WEBHOOK_SECRET, body)).toMatchObject({ duplicate: true });
+  });
+  it("lets staff resend a waiting consent's token at most once per cooldown", async () => {
+    await prepare(); live(); await db.update(recovaConsents).set({ status: "awaiting_consent" });
+    const [staffMember] = await db.insert(staff).values({ email: "resend@example.test", fullName: "Staff", passwordHash: "x", role: "admin" }).returning();
+    const controller = new RecovaProductionController(db);
+    fetchMock.mockResolvedValue(response({ status: true }));
+    const result = await controller.resend(reference(), { staffId: staffMember.id } as never);
+    expect(result).toMatchObject({ ok: true, operation: "resend-consent" });
+    expect(fetchMock).toHaveBeenCalledWith(`https://recova.ng/fixture/api/ConsentRequest/ResendConsentRequestMessage/${reference()}`, expect.objectContaining({ method: "POST" }));
+    await expect(controller.resend(reference(), { staffId: staffMember.id } as never)).rejects.toThrow("less than 2 minutes");
+    await db.update(recovaConsents).set({ status: "active" }); await db.delete(auditLogs);
+    await expect(controller.resend(reference(), { staffId: staffMember.id } as never)).rejects.toThrow("still waiting");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it("requires agreed contract settings and prevents simultaneous Mono collection", () => {
     live(); expect(consentSetupStatus().submissionEnabled).toBe(true);
