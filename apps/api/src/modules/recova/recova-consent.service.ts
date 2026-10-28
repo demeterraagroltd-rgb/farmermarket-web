@@ -11,11 +11,17 @@ import { buildInstallments, isPayNow } from "../orders/installments";
 
 export const prepareConsentSchema = z.object({
   txnPin: z.string().regex(/^\d{4}$/),
-  bankCode: z.string().regex(/^\d{3}$/),
-  accountNumber: z.string().regex(/^\d{10}$/),
+  bankCode: z.string().regex(/^\d{3}$/).optional(),
+  accountNumber: z.string().regex(/^\d{10}$/).optional(),
+  // Reuse the repayment account from the customer's previous Recova setup.
+  useSavedAccount: z.literal(true).optional(),
   accountOwnedByCustomer: z.literal(true),
   consentAccepted: z.literal(true),
-}).strict();
+}).strict().refine((v) => v.useSavedAccount ? !v.bankCode && !v.accountNumber : !!v.bankCode && !!v.accountNumber,
+  "Choose your saved account or enter a bank and account number.");
+
+/** Setups whose account the customer has already put through Recova, best first. */
+const REUSABLE_STATUSES = ["active", "processing", "awaiting_consent"] as const;
 
 type Consent = typeof recovaConsents.$inferSelect;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -46,6 +52,26 @@ export class RecovaConsentService {
     return order;
   }
 
+  /**
+   * The bank account from this customer's most recent usable setup on another
+   * order. The full account number stays server-side; callers get last 4 digits.
+   */
+  private async savedAccount(userId: string, orderId: string, db: Db | Tx = this.db) {
+    const rows = await db.select().from(recovaConsents)
+      .where(and(eq(recovaConsents.userId, userId), inArray(recovaConsents.status, [...REUSABLE_STATUSES])));
+    const best = rows.filter(row => row.orderId !== orderId).sort((a, b) =>
+      REUSABLE_STATUSES.indexOf(a.status as never) - REUSABLE_STATUSES.indexOf(b.status as never)
+      || b.createdAt.getTime() - a.createdAt.getTime());
+    for (const row of best) {
+      const raw = decryptSecretOrNull(row.payloadEncrypted, RECOVA_DATA_KEY);
+      const payload = raw ? object(JSON.parse(raw)) : null;
+      const accountNumber = payload?.preferredRepaymentAccount, bankCode = payload?.preferredRepaymentBankCBNCode;
+      if (typeof accountNumber === "string" && /^\d{10}$/.test(accountNumber) && typeof bankCode === "string" && /^\d{3}$/.test(bankCode))
+        return { bankCode, accountNumber, accountLast4: accountNumber.slice(-4) };
+    }
+    return null;
+  }
+
   async status(userId: string, orderId: string) {
     const order = await this.ownedOrder(userId, orderId);
     const [consent] = await this.db.select().from(recovaConsents).where(eq(recovaConsents.orderId, orderId)).limit(1);
@@ -53,6 +79,7 @@ export class RecovaConsentService {
     const setup = consentSetupStatus();
     return { setup: { draftAvailable: setup.draftAvailable, submissionEnabled: setup.submissionEnabled, purpose: setup.purpose },
       eligible: setupOpen(order) && !!plan && !isPayNow(plan),
+      savedAccount: await this.savedAccount(userId, orderId).then(a => a && { bankCode: a.bankCode, accountLast4: a.accountLast4 }),
       consent: consent ? this.view(consent) : null };
   }
 
@@ -100,15 +127,18 @@ export class RecovaConsentService {
       if (!profile.email || !z.string().email().safeParse(profile.email).success) throw new BadRequestException("Add a valid email address to your profile first.");
       const config = consentSetupStatus();
       const reference = existing?.reference ?? `fm-live-${order.id}`;
+      const saved = input.useSavedAccount ? await this.savedAccount(userId, orderId, tx) : null;
+      if (input.useSavedAccount && !saved) throw new BadRequestException("We couldn't find your previous repayment account. Enter your bank details instead.");
+      const bankCode = saved?.bankCode ?? input.bankCode!, accountNumber = saved?.accountNumber ?? input.accountNumber!;
       // Dates and amounts come exclusively from the approved server-side schedule.
       const payload = { bvn, loanReference: reference, customerID: userId, customerName: profile.fullName,
         customerEmail: profile.email, phoneNumber: profile.phone, loanAmount: toNaira(order.totalKobo),
         totalRepaymentExpected: toNaira(schedule.reduce((sum, row) => sum + row.amountKobo, 0n)),
         loanTenure: loanTenure(config.tenureUnit, order, plan, schedule.at(-1)!.dueDate),
-        linkedAccountNumber: input.accountNumber, preferredRepaymentAccount: input.accountNumber,
-        preferredRepaymentBankCBNCode: input.bankCode, repaymentType: config.purpose,
+        linkedAccountNumber: accountNumber, preferredRepaymentAccount: accountNumber,
+        preferredRepaymentBankCBNCode: bankCode, repaymentType: config.purpose,
         collectionPaymentSchedules: snapshot.map(row => ({ repaymentDate: row.dueDate, repaymentAmountInNaira: row.amount })) };
-      const values = { purpose: config.purpose, bankCode: input.bankCode, accountLast4: input.accountNumber.slice(-4),
+      const values = { purpose: config.purpose, bankCode, accountLast4: accountNumber.slice(-4),
         payloadEncrypted: encryptSecret(JSON.stringify(payload), RECOVA_DATA_KEY), scheduleSnapshot: snapshot,
         consentVersion: CONSENT_VERSION, consentedAt: new Date(), updatedAt: new Date() };
       if (existing) await tx.update(recovaConsents).set(values).where(eq(recovaConsents.id, existing.id));

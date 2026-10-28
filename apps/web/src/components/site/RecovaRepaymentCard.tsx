@@ -9,6 +9,7 @@ import { RECOVA_BANKS } from "../../lib/recova-banks";
 type Setup = {
   setup: { draftAvailable: boolean; submissionEnabled: boolean; purpose: "Collection" | "Recovery" };
   eligible: boolean;
+  savedAccount?: { bankCode: string; accountLast4: string } | null;
   consent: null | { reference: string; status: string; purpose: string; accountLast4: string; bankCode: string;
     approvalUrl: string | null; schedule: { dueDate: string; amount: number }[]; checkedAt: string | null };
 };
@@ -23,6 +24,8 @@ export function RecovaRepaymentCard({ orderId }: { orderId: string }) {
   const [accepted, setAccepted] = useState(false);
   const [owned, setOwned] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Default to the account from the customer's previous setup when there is one.
+  const [useSaved, setUseSaved] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const path = `/v1/orders/${encodeURIComponent(orderId)}/recova`;
@@ -40,7 +43,8 @@ export function RecovaRepaymentCard({ orderId }: { orderId: string }) {
     setBusy(true); setError(null);
     try {
       const response = await accountFetch(`${path}/${name}`, { method: "POST", body: name === "refresh" ? undefined : JSON.stringify(name === "prepare"
-        ? { txnPin: pin, bankCode, accountNumber, accountOwnedByCustomer: owned, consentAccepted: accepted } : { txnPin: pin }) });
+        ? { txnPin: pin, ...(reuse ? { useSavedAccount: true } : { bankCode, accountNumber }), accountOwnedByCustomer: owned, consentAccepted: accepted }
+        : { txnPin: pin }) });
       if (!response.ok) throw new Error(await readError(response));
       setData(await response.json()); setPin("");
       if (name === "prepare") { setAccountNumber(""); setAccepted(false); setOwned(false); setEditing(false); }
@@ -51,6 +55,9 @@ export function RecovaRepaymentCard({ orderId }: { orderId: string }) {
   const input = "mt-1 w-full rounded-lg border border-dark-border px-3 py-2 text-sm";
   const button = "rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-40";
   const consent = data?.consent;
+  const saved = data?.savedAccount ?? null;
+  const reuse = !!saved && useSaved;
+  const savedBank = saved ? RECOVA_BANKS.find(bank => bank.code === saved.bankCode)?.name ?? "Your bank" : "";
   const done = consent?.status === "active";
   // Pay Now and closed orders aren't loans: show nothing rather than an
   // unavailable Recova box, unless a setup was already started for this order.
@@ -76,12 +83,18 @@ export function RecovaRepaymentCard({ orderId }: { orderId: string }) {
     {data?.eligible && (!consent || consent.status === "draft") && <>
       {(!consent || editing) && (!data.setup.draftAvailable ? <p className="text-sm text-text-muted">Repayment setup is being configured. Please contact support.</p> : <form onSubmit={event => void action("prepare", event)} className="space-y-3">
         <p className="text-sm text-text-medium">Prepare your bank details first. This saves a draft and sends nothing to Recova.</p>
+        {saved && <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
+          <label className="flex items-center gap-2"><input type="radio" name="repayment-account" checked={useSaved} onChange={() => setUseSaved(true)} />Use the same account as before: <strong>{savedBank} ••{saved.accountLast4}</strong></label>
+          <label className="flex items-center gap-2"><input type="radio" name="repayment-account" checked={!useSaved} onChange={() => setUseSaved(false)} />Use a different account</label>
+        </div>}
+        {!reuse && <>
         <label className="block text-sm">Bank name<select className={input} value={bankCode} onChange={e => setBankCode(e.target.value)} required disabled={busy}>
           <option value="" disabled>Select your bank</option>
           {RECOVA_BANKS.map(bank => <option key={bank.code} value={bank.code}>{bank.name}</option>)}
         </select></label>
         <p className="text-xs text-text-muted">If your bank is not listed, contact support before continuing.</p>
         <label className="block text-sm">Your 10-digit account number<input className={input} value={accountNumber} onChange={e => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))} inputMode="numeric" pattern="[0-9]{10}" required autoComplete="off" /></label>
+        </>}
         <label className="block text-sm">Transaction code<input className={input} type="password" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" pattern="[0-9]{4}" required autoComplete="off" /></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={owned} onChange={e => setOwned(e.target.checked)} required />This account belongs to me.</label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} required />I agree to share my verified BVN, contact details, repayment account and this order’s repayment schedule with Recova to request {data.setup.purpose.toLowerCase()} authorization. I will review the mandate terms on Recova before approving.</label>

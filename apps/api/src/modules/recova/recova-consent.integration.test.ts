@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { eq } from "drizzle-orm";
 import { applicantProfiles, auditLogs, bnplPlans, orders, recovaCallbacks, recovaConsents, repaymentSchedules, staff, users, type Db } from "@farmermarket/db";
 import { createTestDb, type TestDb } from "../../test/test-db";
-import { encryptSecret } from "../../common/crypto/reversible-secret";
+import { decryptSecretOrNull, encryptSecret } from "../../common/crypto/reversible-secret";
 import { RecovaConsentService } from "./recova-consent.service";
 import { consentSetupStatus, RECOVA_DATA_KEY, safeConsentUrl } from "./recova-consent.config";
 import { authenticateRecovaCallback, RecovaWebhookController } from "./recova-webhook.controller";
@@ -207,5 +207,27 @@ describe("Recova customer consent with real isolated SQL", () => {
     await expect(hook.mandate(process.env.RECOVA_WEBHOOK_SECRET, body)).rejects.toThrow("not confirmed");
     expect((await service.status(userId, orderId)).consent?.status).toBe("needs_review");
     expect(await db.select().from(recovaCallbacks)).toHaveLength(0);
+  });
+  it("reuses the account from a previous setup on a new order without the customer re-entering it", async () => {
+    const [plan] = await db.select().from(bnplPlans).limit(1);
+    const [second] = await db.insert(orders).values({ userId, bnplPlanId: plan.id, status: "confirmed", subtotalKobo: 100000n, totalKobo: 100000n, approvedAt: new Date() }).returning();
+    await db.insert(repaymentSchedules).values({ orderId: second.id, userId, installmentNumber: 1, totalInstallments: 1, amountKobo: 100000n, dueDate: new Date(Date.now() + 86400000) });
+    // Nothing to reuse before the first order has been through Recova.
+    expect((await service.status(userId, second.id)).savedAccount).toBeNull();
+    await expect(service.prepare(userId, second.id, { txnPin: "1234", useSavedAccount: true, accountOwnedByCustomer: true, consentAccepted: true }))
+      .rejects.toThrow("couldn't find your previous repayment account");
+    await prepare();
+    await db.update(recovaConsents).set({ status: "active" }).where(eq(recovaConsents.orderId, orderId));
+    const offered = await service.status(userId, second.id);
+    expect(offered.savedAccount).toEqual({ bankCode: "999", accountLast4: "6789" });
+    expect(JSON.stringify(offered)).not.toContain(input.accountNumber);
+    const view = await service.prepare(userId, second.id, { txnPin: "1234", useSavedAccount: true, accountOwnedByCustomer: true, consentAccepted: true });
+    expect(view.consent).toMatchObject({ reference: `fm-live-${second.id}`, status: "draft", bankCode: "999", accountLast4: "6789" });
+    const [row] = await db.select().from(recovaConsents).where(eq(recovaConsents.orderId, second.id));
+    const payload = JSON.parse(decryptSecretOrNull(row.payloadEncrypted, RECOVA_DATA_KEY)!);
+    expect(payload).toMatchObject({ preferredRepaymentAccount: input.accountNumber, preferredRepaymentBankCBNCode: "999", loanReference: `fm-live-${second.id}` });
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Other customers never see this customer's saved account.
+    await expect(service.status(otherId, second.id)).rejects.toThrow("Order not found");
   });
 });
