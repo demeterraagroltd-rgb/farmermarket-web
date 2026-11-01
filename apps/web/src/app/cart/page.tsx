@@ -8,16 +8,18 @@ import { Card, EmptyState } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { formatNairaAmount } from "../../lib/format";
-import { getCart, setQuantity, totalsOf, type CartLine } from "../../lib/cart";
+import { getCart, refreshCartPrices, setQuantity, totalsOf, type CartLine } from "../../lib/cart";
 import { getCustomerSession, type CustomerSession } from "../../lib/customer";
 
 export default function CartPage() {
   const router = useRouter();
   const [lines, setLines] = useState<CartLine[] | null>(null);
+  const [priceError, setPriceError] = useState("");
   const [session, setSession] = useState<CustomerSession | null>(null);
 
   useEffect(() => {
     setLines(getCart());
+    refreshCartPrices().then(setLines).catch(err => setPriceError(err.message));
     setSession(getCustomerSession());
     const sync = () => setLines(getCart());
     window.addEventListener("farmermarket:cart", sync);
@@ -36,6 +38,7 @@ export default function CartPage() {
       <main className="min-h-screen bg-white px-6 py-12">
         <div className="mx-auto max-w-3xl">
           <h1 className="text-2xl font-bold tracking-tight text-text-dark">Your cart</h1>
+          {priceError && <p role="alert" className="mt-3 text-sm text-error">{priceError}</p>}
 
           {lines.length === 0 ? (
             <div className="mt-8">

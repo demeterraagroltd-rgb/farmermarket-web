@@ -7,7 +7,7 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input, Select } from "../../components/ui/Field";
 import { formatNairaAmount } from "../../lib/format";
-import { clearCart, getCart, totalsOf, type CartLine } from "../../lib/cart";
+import { clearCart, getCart, refreshCartPrices, totalsOf, type CartLine } from "../../lib/cart";
 import { usePickupCenters } from "../../lib/pickup-centers";
 import {
   accountFetch,
@@ -80,6 +80,7 @@ export default function CheckoutPage() {
       return;
     }
     setLines(cartLines);
+    refreshCartPrices().then(setLines).catch(err => setError(err.message));
 
     // The saved session can say "no code yet" after the customer set one in
     // the app or during repayment setup. Ask the server so checkout shows
@@ -154,6 +155,12 @@ export default function CheckoutPage() {
 
     setPlacing(true);
     try {
+      const refreshed = await refreshCartPrices();
+      if (refreshed.length !== lines.length || refreshed.some((line, i) => line.product.id !== lines[i]?.product.id || line.quantity !== lines[i]?.quantity || line.product.price !== lines[i]?.product.price)) {
+        setLines(refreshed);
+        throw new Error("Your cart prices have updated. Review the new total, then place your order again.");
+      }
+
       if (needsNewPin) {
         const pinRes = await accountFetch("/v1/auth/customer/txn-pin", {
           method: "POST",
@@ -179,6 +186,7 @@ export default function CheckoutPage() {
         method: "POST",
         body: JSON.stringify({
           items: lines.map((l) => ({ ...(l.product.kind === "bundle" ? { bundleId: l.product.id } : { productId: l.product.id }), quantity: l.quantity })),
+          expectedSubtotalNaira: totals.subtotal,
           pickupCenterId,
           pickupDate,
           bnplPlanId: selectedPlan.id,

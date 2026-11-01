@@ -12,6 +12,9 @@ import { BundlesService } from "./bundles.service";
 import { bundleSchema, type BundleInput } from "./dto/bundle.dto";
 import { CatalogService } from "./catalog.service";
 import {
+  catalogPricingSchema,
+  priceListImportSchema,
+  type CatalogPricingInput,
   CreateCategoryDto,
   createCategorySchema,
   CreateBrandDto,
@@ -35,6 +38,30 @@ import {
 @Roles("super_admin", "admin")
 export class AdminCatalogController {
   constructor(private readonly catalogService: CatalogService, private readonly bundlesService: BundlesService) {}
+
+  @Get("pricing")
+  pricing() { return this.catalogService.pricing(); }
+
+  @Patch("pricing")
+  updatePricing(@Body(new ZodValidationPipe(catalogPricingSchema)) body: CatalogPricingInput) {
+    return this.catalogService.updatePricing(body);
+  }
+
+  @Get("price-list")
+  priceList() { return this.catalogService.priceListPreview(); }
+
+  @Get("market-prices")
+  marketPrices() { return this.catalogService.marketPricePreview(); }
+
+  @Post("market-prices/import")
+  importMarketPrices(@Body(new ZodValidationPipe(priceListImportSchema)) body: { imageBaseUrl: string }, @CurrentStaff() staff: AuthenticatedStaff) {
+    return this.catalogService.importMarketPrices(body.imageBaseUrl, staff.staffId);
+  }
+
+  @Post("price-list/import")
+  importPriceList(@Body(new ZodValidationPipe(priceListImportSchema)) body: { imageBaseUrl: string }, @CurrentStaff() staff: AuthenticatedStaff) {
+    return this.catalogService.importPriceList(body.imageBaseUrl, staff.staffId);
+  }
 
   @Get("bundles")
   listBundles() { return this.bundlesService.list(); }

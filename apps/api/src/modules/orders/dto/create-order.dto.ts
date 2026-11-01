@@ -14,6 +14,7 @@ export const createOrderItemSchema = z.object({
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const createOrderSchema = z.object({
+  expectedSubtotalNaira: z.number().positive().optional(),
   items: z.array(createOrderItemSchema).min(1),
   pickupCenterId: z.string().uuid(),
   // Coerced to a Date so the column stores a real timestamp, not whatever
@@ -36,6 +37,8 @@ export class CreateOrderItemDto {
 }
 
 export class CreateOrderDto implements CreateOrderInput {
+  @ApiPropertyOptional({ description: "Buyer-confirmed subtotal; a price change requires review" })
+  expectedSubtotalNaira?: number;
   @ApiProperty({ type: [CreateOrderItemDto] })
   items!: CreateOrderItemDto[];
 

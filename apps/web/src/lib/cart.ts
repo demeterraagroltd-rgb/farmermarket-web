@@ -10,6 +10,8 @@
 // a cart is what's in this browser right now, the same way it would be on
 // any storefront.
 
+import { nairaToKobo, percentOfKobo } from "@farmermarket/core";
+
 const CART_KEY = "farmermarket_cart";
 const DELIVERY_FEE_NAIRA = 500;
 const SERVICE_FEE_RATE = 0.03;
@@ -62,9 +64,10 @@ export function getCart(): CartLine[] {
 
 export function totalsOf(lines: CartLine[]): CartTotals {
   const itemCount = lines.reduce((n, l) => n + l.quantity, 0);
-  const subtotal = lines.reduce((n, l) => n + l.product.price * l.quantity, 0);
+  const subtotalKobo = lines.reduce((n, l) => n + nairaToKobo(l.product.price) * BigInt(l.quantity), 0n);
+  const subtotal = Number(subtotalKobo) / 100;
   const deliveryFee = lines.length === 0 ? 0 : DELIVERY_FEE_NAIRA;
-  const serviceFee = Math.round(subtotal * SERVICE_FEE_RATE);
+  const serviceFee = Number(percentOfKobo(subtotalKobo, SERVICE_FEE_RATE * 100)) / 100;
   return { itemCount, subtotal, deliveryFee, serviceFee, total: subtotal + deliveryFee + serviceFee };
 }
 
@@ -94,4 +97,30 @@ export function removeFromCart(productId: string): CartLine[] {
 
 export function clearCart(): void {
   write([]);
+}
+
+/** Refresh saved carts against current prices before the customer authorizes payment. */
+export async function refreshCartPrices(): Promise<CartLine[]> {
+  const initial = read();
+  if (!initial.length) return initial;
+  const base = process.env.NEXT_PUBLIC_API_URL;
+  const load = async (path: string) => {
+    const res = await fetch(`${base}/v1/catalog/${path}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("Could not check current prices. Please try again.");
+    return res.json();
+  };
+  const [products, bundles] = await Promise.all([
+    initial.some(l => l.product.kind !== "bundle") ? load("products") : [],
+    initial.some(l => l.product.kind === "bundle") ? load("bundles") : [],
+  ]) as [Array<{ id: string; price: number; discountPrice: number | null }>, Array<{ id: string; bundlePrice: number | null; ready: boolean }>];
+  // Read again so a quantity edit made during the fetch is retained.
+  const next = read().map(line => {
+    const product = products.find(p => p.id === line.product.id);
+    const bundle = bundles.find(p => p.id === line.product.id);
+    const price = line.product.kind === "bundle" ? bundle?.ready ? bundle.bundlePrice : null : product ? product.discountPrice ?? product.price : null;
+    if (price == null || !Number.isFinite(price) || price <= 0) throw new Error(`${line.product.name} is unavailable. Remove it from the cart to continue.`);
+    return { ...line, product: { ...line.product, price } };
+  });
+  write(next);
+  return next;
 }

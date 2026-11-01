@@ -54,6 +54,7 @@ export const products = pgTable(
     stockQuantity: integer("stock_quantity").notNull().default(0),
     lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
     costPriceKobo: bigint("cost_price_kobo", { mode: "bigint" }),
+    pricingMode: text("pricing_mode").notNull().default("manual"),
     sortOrder: integer("sort_order").notNull().default(0),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdBy: uuid("created_by").references(() => staff.id),
@@ -63,6 +64,8 @@ export const products = pgTable(
   (table) => [
     check("product_stock_nonnegative", sql`${table.stockQuantity} >= 0`),
     check("price_positive", sql`${table.priceKobo} > 0`),
+    check("product_pricing_mode", sql`${table.pricingMode} IN ('manual', 'percentage')`),
+    check("percentage_pricing_cost", sql`${table.pricingMode} <> 'percentage' OR (${table.costPriceKobo} IS NOT NULL AND ${table.costPriceKobo} > 0 AND ${table.discountPriceKobo} IS NULL)`),
     check(
       "discount_below_price",
       sql`${table.discountPriceKobo} IS NULL OR ${table.discountPriceKobo} < ${table.priceKobo}`,

@@ -1,7 +1,11 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { koboToNaira, nairaToKobo } from "@farmermarket/core";
+import { calculateCatalogPrice, koboToNaira, nairaToKobo } from "@farmermarket/core";
 import { bnplPlans, banners, categories, brands, products, inventoryMovements, type Db } from "@farmermarket/db";
+import { lockCatalogPricing, readCatalogPricing, saveCatalogPricing } from "./catalog-pricing";
+import { importPriceList, importMarketPrices, PRICE_LIST_PRODUCTS } from "./price-list-import";
+import { MARKET_PRICE_PRODUCTS } from "./market-price-data";
+import type { CatalogPricingInput } from "./dto/catalog.dto";
 import { DB } from "../../db/db.module";
 import { bundleItems, bundles, pickupCenters, warehouseStocks, orders, orderItems } from '@farmermarket/db';
 import type { CreateOrderInput } from '../orders/dto/create-order.dto';
@@ -16,6 +20,13 @@ import type {
 @Injectable()
 export class CatalogService {
   constructor(@Inject(DB) private readonly db: Db) {}
+
+  pricing() { return readCatalogPricing(this.db); }
+  updatePricing(input: CatalogPricingInput) { return saveCatalogPricing(this.db, input); }
+  priceListPreview() { return PRICE_LIST_PRODUCTS; }
+  marketPricePreview() { return MARKET_PRICE_PRODUCTS; }
+  importMarketPrices(imageBaseUrl: string, staffId: string) { return importMarketPrices(this.db, imageBaseUrl, staffId); }
+  importPriceList(imageBaseUrl: string, staffId: string) { return importPriceList(this.db, imageBaseUrl, staffId); }
 
   cartAvailability(warehouseId:string,items:CreateOrderInput['items']){return this.db.transaction(async tx=>{
     const [location]=await tx.select().from(pickupCenters).where(eq(pickupCenters.id,warehouseId));
@@ -74,7 +85,7 @@ export class CatalogService {
       .orderBy(products.sortOrder);
 
     return rows.map((row) => ({
-      ...row.products,
+      ...this.publicProduct(row.products),
       isAvailable: row.products.isAvailable && row.products.stockQuantity > 0,
       price: koboToNaira(row.products.priceKobo),
       discountPrice:
@@ -130,15 +141,31 @@ export class CatalogService {
     return this.db.delete(banners).where(eq(banners.id, id)).returning().then((r) => r[0]);
   }
 
+  private publicProduct(product: typeof products.$inferSelect) {
+    const { costPriceKobo, pricingMode, ...visible } = product;
+    return visible;
+  }
+
+  private priceValues(input: Partial<CreateProductInput>, rates: CatalogPricingInput, existing?: typeof products.$inferSelect) {
+    const pricingMode = input.pricingMode ?? existing?.pricingMode ?? "manual";
+    const costPriceKobo = input.costPriceNaira !== undefined ? nairaToKobo(input.costPriceNaira) : existing?.costPriceKobo ?? null;
+    if (pricingMode === "percentage") {
+      if (!costPriceKobo || costPriceKobo <= 0n) throw new BadRequestException("Enter a positive cost price for percentage pricing");
+      if (input.discountPriceNaira != null) throw new BadRequestException("Percentage pricing uses the calculated total. Switch to manual pricing to set a discount.");
+      return { pricingMode, costPriceKobo, priceKobo: calculateCatalogPrice(costPriceKobo, rates).priceKobo, discountPriceKobo: null };
+    }
+    const priceKobo = input.priceNaira !== undefined ? nairaToKobo(input.priceNaira) : existing?.priceKobo;
+    const discountPriceKobo = input.discountPriceNaira === null ? null : input.discountPriceNaira !== undefined ? nairaToKobo(input.discountPriceNaira) : existing?.discountPriceKobo ?? null;
+    if (!priceKobo || priceKobo <= 0n) throw new BadRequestException("Enter a positive selling price");
+    if (discountPriceKobo !== null && (discountPriceKobo <= 0n || discountPriceKobo >= priceKobo)) throw new BadRequestException("Discount must be positive and below the selling price");
+    return { pricingMode, costPriceKobo, priceKobo, discountPriceKobo };
+  }
+
   private productValues(input: Partial<CreateProductInput>) {
     return {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
-      ...(input.priceNaira !== undefined ? { priceKobo: nairaToKobo(input.priceNaira) } : {}),
-      ...(input.discountPriceNaira !== undefined
-        ? { discountPriceKobo: nairaToKobo(input.discountPriceNaira) }
-        : {}),
       ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
       ...(input.brandId !== undefined ? { brandId: input.brandId } : {}),
       ...(input.unit !== undefined ? { unit: input.unit } : {}),
@@ -153,15 +180,15 @@ export class CatalogService {
   async createProduct(input: CreateProductInput, createdBy: string) {
     const status = input.status ?? "draft";
     return this.db.transaction(async (tx) => {
+    const rates = await lockCatalogPricing(tx);
+    const pricing = this.priceValues(input, rates);
     const [product] = await tx
       .insert(products)
       .values({
         name: input.name,
         description: input.description ?? "",
         imageUrl: input.imageUrl,
-        priceKobo: nairaToKobo(input.priceNaira),
-        discountPriceKobo:
-          input.discountPriceNaira !== undefined ? nairaToKobo(input.discountPriceNaira) : undefined,
+        ...pricing,
         categoryId: input.categoryId,
         brandId: input.brandId,
         unit: input.unit,
@@ -185,7 +212,10 @@ export class CatalogService {
     if (input.stockQuantity !== undefined) throw new BadRequestException("Use Inventory to receive or adjust stock with a reason");
     const values = this.productValues(input);
     return this.db.transaction(async tx=>{
+    const rates = await lockCatalogPricing(tx);
     const [p]=await tx.select().from(products).where(eq(products.id,id)).for('update');
+    if (!p) throw new BadRequestException('Product not found');
+    const pricing = this.priceValues(input, rates, p);
     if(p&&input.unit!==undefined&&input.unit!==p.unit){
       const [history]=await tx.select({id:inventoryMovements.id}).from(inventoryMovements).where(and(eq(inventoryMovements.productId,id),sql`(${inventoryMovements.availableDelta} <> 0 OR ${inventoryMovements.reservedDelta} <> 0)`)).limit(1);
       const [reserved]=await tx.select({id:orderItems.id}).from(orderItems).innerJoin(orders,eq(orderItems.orderId,orders.id)).where(and(eq(orders.stockReserved,true),sql`(${orderItems.productId} = ${id}::uuid OR ${orderItems.components} @> ${JSON.stringify([{productId:id}])}::jsonb)`)).limit(1);
@@ -195,6 +225,7 @@ export class CatalogService {
       .update(products)
       .set({
         ...values,
+        ...pricing,
         ...(input.status === "published" ? { publishedAt: new Date() } : {}),
         updatedAt: new Date(),
       })

@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { koboToNaira, percentOfKobo } from "@farmermarket/core";
+import { koboToNaira, nairaToKobo, percentOfKobo } from "@farmermarket/core";
 import {
   orders,
   orderItems,
@@ -264,6 +264,9 @@ export class OrdersService {
       }
 
       const subtotalKobo = resolvedLines.reduce((sum, item) => sum + item.unitPriceKobo * BigInt(item.quantity), 0n);
+      if (input.expectedSubtotalNaira !== undefined && nairaToKobo(input.expectedSubtotalNaira) !== subtotalKobo) {
+        throw new BadRequestException("Product prices have changed. Refresh your cart and review the updated total before ordering.");
+      }
       const totalKobo = subtotalKobo + DELIVERY_FEE_KOBO + percentOfKobo(subtotalKobo, SERVICE_FEE_PERCENT);
 
       const [order] = await tx

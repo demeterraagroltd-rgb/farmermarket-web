@@ -1,0 +1,23 @@
+/** Observed Nigerian retailer selling prices checked 2026-11-01. Not supplier costs. */
+export const MARKET_PRICE_PRODUCTS = [
+  { sku: "ONLINE-SEMOLINA-10KG", name: "Supreme Semolina 10kg", category: "Flour & Swallow", brand: "Crown Flour Mill", unit: "10kg bag",
+    imageFile: "1000191370-studio.png", retailPriceNaira: 18000,
+    sourceUrl: "https://shop.ojaoba.com/products/supreme-semolina-10kg", sourceName: "OjaOba", checkedAt: "2026-11-01",
+    note: "Listed retail price for one 10kg bag. Different product from the workbook's Semovita." },
+  { sku: "ONLINE-GINO-PARTY-JOLLOF", name: "Gino Party Jollof 50g × 50", category: "Tomato & Seasoning", brand: "Gino", unit: "carton of 50 × 50g",
+    imageFile: "1000191374-studio.png", retailPriceNaira: 11000,
+    sourceUrl: "https://shop.ojaoba.com/products/gino-party-jollof-50g-carton", sourceName: "OjaOba", checkedAt: "2026-11-01",
+    note: "Retail listing specifies 50g carton. Photograph specifies 50 sachets; confirm carton count with supplier." },
+  { sku: "ONLINE-STAR-OIL-25L", name: "Star Oil 25L", category: "Cooking Oil", brand: "Splendor Star", unit: "25L jerrycan",
+    imageFile: "1000191378-studio.png", retailPriceNaira: 66000,
+    sourceUrl: "https://www.solemn.com.ng/product/splendor-star-vegetable-oil", sourceName: "Solemn Shopping", checkedAt: "2026-11-01",
+    note: "Listed current selling price, excluding retailer shipping. Crossed-out price is ₦69,000." },
+  { sku: "ONLINE-EMPEROR-OIL-25L", name: "Emperor Oil 25L", category: "Cooking Oil", brand: "Emperor", unit: "25L jerrycan",
+    imageFile: "1000191379-studio.png", retailPriceNaira: 85000,
+    sourceUrl: "https://mall.thecbncoop.com/product/4410/emperor-vegetable-oil-25litre", sourceName: "CBN Cooperative Mall", checkedAt: "2026-11-01",
+    note: "Vendor Mecne-Rolf International, Garki Market Abuja. Listed selling price; previous price ₦89,000." },
+  { sku: "ONLINE-ZYN-OIL-PENDING", name: "Zyn Vegetable Oil", category: "Cooking Oil", brand: "Zyn", unit: "capacity to confirm",
+    imageFile: "1000191380-studio.png", retailPriceNaira: null,
+    sourceUrl: "https://www.iyknel.biz/products?category=oil", sourceName: "Iyknel (other pack sizes only)", checkedAt: "2026-11-01",
+    note: "No matching single 20L/25L jerrycan price verified. Listings for 4 × 5L cartons do not establish this container's price. Not imported until a selling price and capacity are confirmed." },
+] as const;

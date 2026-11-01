@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { calculateCatalogPrice, DEFAULT_CATALOG_PRICING, nairaToKobo, type CatalogPricingRates } from "@farmermarket/core";
+import { CatalogPricing } from "../../../../components/admin/CatalogPricing";
+import { StudioImageLibrary } from "../../../../components/admin/StudioImageLibrary";
+import { MarketPriceProducts } from "../../../../components/admin/MarketPriceProducts";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "../../../../lib/auth";
 import { formatNaira } from "../../../../lib/format";
@@ -24,6 +28,8 @@ interface Product {
   name: string;
   imageUrl: string;
   priceKobo: string;
+  costPriceKobo: string | null;
+  pricingMode: "manual" | "percentage";
   discountPriceKobo: string | null;
   categoryId: string;
   brandId: string;
@@ -47,6 +53,8 @@ const EMPTY_PRODUCT = {
   name: "",
   imageUrl: "",
   priceNaira: "",
+  costPriceNaira: "",
+  pricingMode: "percentage",
   discountNaira: "",
   categoryId: "",
   brandId: "",
@@ -67,6 +75,7 @@ function ProductFields({
   brands,
   onBusyChange,
   editing = false,
+  rates,
 }: {
   form: typeof EMPTY_PRODUCT;
   set: (updater: (f: typeof EMPTY_PRODUCT) => typeof EMPTY_PRODUCT) => void;
@@ -74,13 +83,28 @@ function ProductFields({
   brands: Brand[];
   onBusyChange: (busy: boolean) => void;
   editing?: boolean;
+  rates: CatalogPricingRates;
 }) {
+  let preview: ReturnType<typeof calculateCatalogPrice> | null = null;
+  try { if (form.costPriceNaira) preview = calculateCatalogPrice(nairaToKobo(Number(form.costPriceNaira)), rates); } catch { /* Invalid input is reported by the form/server. */ }
   return (
     <>
       <Input label="Product name" value={form.name} onChange={(e) => set((f) => ({ ...f, name: e.target.value }))} required />
       <CatalogImageInput value={form.imageUrl} onChange={(url) => set((f) => ({ ...f, imageUrl: url }))} onBusyChange={onBusyChange} required />
-      <Input type="number" label="Price, ₦" value={form.priceNaira} onChange={(e) => set((f) => ({ ...f, priceNaira: e.target.value }))} min={1} required />
-      <Input type="number" label="Discount price, ₦ (optional)" value={form.discountNaira} onChange={(e) => set((f) => ({ ...f, discountNaira: e.target.value }))} min={0} />
+      <StudioImageLibrary onSelect={url => set(f => ({ ...f, imageUrl: url }))} />
+      <Select label="Pricing method" value={form.pricingMode} onChange={e => set(f => ({ ...f, pricingMode: e.target.value, discountNaira: "" }))}>
+        <option value="percentage">Cost + markup + insurance</option>
+        <option value="manual">Manual selling price</option>
+      </Select>
+      <Input type="number" step="0.01" label="Cost price, ₦" value={form.costPriceNaira} onChange={e => set(f => ({ ...f, costPriceNaira: e.target.value }))} min="0.01" max="1000000000" required={form.pricingMode === "percentage"} />
+      {form.pricingMode === "percentage" ? <div className="rounded-lg bg-surface p-3 text-sm" aria-live="polite">
+        <p className="font-semibold">Calculated total: {preview ? formatNaira(String(preview.priceKobo)) : "Enter a cost price"}</p>
+        <p className="mt-1 text-xs text-text-muted">{rates.markupPercent}% markup + {rates.insurancePercent}% insurance on selling price</p>
+        {preview && <p className="mt-1 text-xs text-text-muted">Selling {formatNaira(String(preview.sellingKobo))} + insurance {formatNaira(String(preview.insuranceKobo))}</p>}
+      </div> : <>
+        <Input type="number" step="0.01" label="Selling price, ₦" value={form.priceNaira} onChange={e => set(f => ({ ...f, priceNaira: e.target.value }))} min="0.01" max="1000000000" required />
+        <Input type="number" step="0.01" label="Discount price, ₦ (optional)" value={form.discountNaira} onChange={e => set(f => ({ ...f, discountNaira: e.target.value }))} min="0.01" />
+      </>}
       <Select label="Category" value={form.categoryId} onChange={(e) => set((f) => ({ ...f, categoryId: e.target.value }))} required>
         <option value="">Select…</option>
         {categories.map((c) => (
@@ -150,6 +174,7 @@ export default function CatalogPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
+  const [rates, setRates] = useState<CatalogPricingRates>(DEFAULT_CATALOG_PRICING);
   const [error, setError] = useState<string | null>(null);
 
   const [categoryName, setCategoryName] = useState("");
@@ -182,12 +207,14 @@ export default function CatalogPage() {
       loadOne<Brand[]>("/v1/admin/catalog/brands", () => router.push("/login")),
       loadOne<Product[]>("/v1/admin/catalog/products", () => router.push("/login")),
       loadOne<Banner[]>("/v1/admin/catalog/banners", () => router.push("/login")),
+      loadOne<CatalogPricingRates>("/v1/admin/catalog/pricing", () => router.push("/login")),
     ])
-      .then(([c, b, p, bn]) => {
+      .then(([c, b, p, bn, pricing]) => {
         setCategories(c);
         setBrands(b);
         setProducts(p);
         setBanners(bn);
+        setRates(pricing);
         setError(null);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load catalog"));
@@ -213,8 +240,10 @@ export default function CatalogPage() {
     return {
       name: form.name,
       imageUrl: form.imageUrl,
-      priceNaira: Number(form.priceNaira),
-      discountPriceNaira: form.discountNaira ? Number(form.discountNaira) : undefined,
+      pricingMode: form.pricingMode,
+      costPriceNaira: form.costPriceNaira ? Number(form.costPriceNaira) : undefined,
+      priceNaira: form.pricingMode === "manual" ? Number(form.priceNaira) : undefined,
+      discountPriceNaira: form.pricingMode === "manual" && form.discountNaira ? Number(form.discountNaira) : null,
       categoryId: form.categoryId,
       brandId: form.brandId,
       unit: form.unit,
@@ -281,6 +310,8 @@ export default function CatalogPage() {
       name: p.name,
       imageUrl: p.imageUrl,
       priceNaira: String(Number(p.priceKobo) / 100),
+      costPriceNaira: p.costPriceKobo ? String(Number(p.costPriceKobo) / 100) : "",
+      pricingMode: p.pricingMode ?? "manual",
       discountNaira: p.discountPriceKobo ? String(Number(p.discountPriceKobo) / 100) : "",
       categoryId: p.categoryId,
       brandId: p.brandId,
@@ -356,7 +387,10 @@ export default function CatalogPage() {
       <PageHeader title="Catalog" description="What's for sale, and what's actually live on the storefront." />
       {error && <p className="text-sm text-error">{error}</p>}
 
-      <div className="grid grid-cols-3 gap-4">
+      <CatalogPricing rates={rates} managedCount={products.filter(p => p.pricingMode === "percentage").length} onSaved={loadAll} />
+      <MarketPriceProducts onSaved={loadAll} />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-text-dark">Categories</h2>
           <QuickAddRow placeholder="e.g. Rice" value={categoryName} onChange={setCategoryName} onSubmit={createCategory} disabled={busy} />
@@ -420,9 +454,9 @@ export default function CatalogPage() {
 
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-text-dark">Add a product</h2>
-        <form onSubmit={createProduct} className="mt-4 grid grid-cols-3 gap-4">
-          <ProductFields form={productForm} set={setProductForm} categories={categories} brands={brands} onBusyChange={setBusy} />
-          <div className="col-span-3 flex justify-end border-t border-dark-border/60 pt-4">
+        <form onSubmit={createProduct} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <ProductFields rates={rates} form={productForm} set={setProductForm} categories={categories} brands={brands} onBusyChange={setBusy} />
+          <div className="col-span-full flex justify-end border-t border-dark-border/60 pt-4">
             <Button type="submit" disabled={busy}>
               <PlusIcon className="h-4 w-4" />
               Add product
@@ -434,13 +468,13 @@ export default function CatalogPage() {
       {products.length === 0 ? (
         <EmptyState label="No products yet." />
       ) : (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {products.map((p) => (
             <Card key={p.id} className="flex flex-col overflow-hidden">
               <div className="relative h-32 w-full bg-surface">
                 {p.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.imageUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={p.imageUrl} alt={p.name} className="h-full w-full bg-white object-contain" />
                 ) : (
                   <div className="flex h-full items-center justify-center">
                     <BoxIcon className="h-8 w-8 text-text-muted" />
@@ -460,6 +494,8 @@ export default function CatalogPage() {
                   <span className="text-sm font-bold tabular-nums text-primary">{formatNaira(p.priceKobo)}</span>
                   <span className="text-xs tabular-nums text-text-muted">{p.stockQuantity} in stock</span>
                 </div>
+                <p className="mt-1 text-xs text-text-muted">{p.pricingMode === "percentage" ? `Cost ${formatNaira(p.costPriceKobo)} + ${rates.markupPercent}% markup + ${rates.insurancePercent}% insurance` : "Manual pricing"}</p>
+                {p.tags?.includes("needs-product-review") && <p className="text-xs text-error">Confirm image, size and pack quantity before publishing.</p>}
                 <div className="mt-3 flex gap-2">
                   <button
                     onClick={() => (editingId === p.id ? setEditingId(null) : startEdit(p))}
@@ -476,7 +512,7 @@ export default function CatalogPage() {
                 </div>
                 {editingId === p.id && (
                   <form onSubmit={saveEdit} className="mt-3 grid grid-cols-1 gap-3 border-t border-dark-border/60 pt-3">
-                    <ProductFields editing form={editForm} set={setEditForm} categories={categories} brands={brands} onBusyChange={setBusy} />
+                    <ProductFields rates={rates} editing form={editForm} set={setEditForm} categories={categories} brands={brands} onBusyChange={setBusy} />
                     <Button type="submit" disabled={busy} className="w-full">Save changes</Button>
                   </form>
                 )}
@@ -489,7 +525,7 @@ export default function CatalogPage() {
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-text-dark">Promo banners</h2>
         <p className="mt-1 text-xs text-text-muted">The carousel on the app home screen and marketplace.</p>
-        <form onSubmit={createBanner} className="mt-4 grid grid-cols-3 gap-4">
+        <form onSubmit={createBanner} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Input label="Brand" value={bannerForm.brand} onChange={(e) => setBannerForm((f) => ({ ...f, brand: e.target.value }))} required />
           <CatalogImageInput value={bannerForm.imageUrl} onChange={(url) => setBannerForm((f) => ({ ...f, imageUrl: url }))} onBusyChange={setBusy} required />
           <Input label="Tagline" value={bannerForm.tagline} onChange={(e) => setBannerForm((f) => ({ ...f, tagline: e.target.value }))} />
@@ -500,7 +536,7 @@ export default function CatalogPage() {
             ))}
           </Select>
           <Input label="Colour" placeholder="#1A7A4C" value={bannerForm.color} onChange={(e) => setBannerForm((f) => ({ ...f, color: e.target.value }))} />
-          <div className="col-span-3 flex justify-end border-t border-dark-border/60 pt-4">
+          <div className="col-span-full flex justify-end border-t border-dark-border/60 pt-4">
             <Button type="submit" disabled={busy}>
               <PlusIcon className="h-4 w-4" />
               Add banner
@@ -508,7 +544,7 @@ export default function CatalogPage() {
           </div>
         </form>
         {banners.length > 0 && (
-          <div className="mt-4 grid grid-cols-3 gap-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             {banners.map((b) => (
               <Card key={b.id} className="flex flex-col overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

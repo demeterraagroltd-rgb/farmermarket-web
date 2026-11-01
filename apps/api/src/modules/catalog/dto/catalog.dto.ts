@@ -36,8 +36,10 @@ export const createProductSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   imageUrl: z.string().url(),
-  priceNaira: z.number().positive(),
-  discountPriceNaira: z.number().positive().optional(),
+  priceNaira: z.number().positive().max(1_000_000_000).optional(),
+  costPriceNaira: z.number().positive().max(1_000_000_000).optional(),
+  pricingMode: z.enum(["manual", "percentage"]).optional(),
+  discountPriceNaira: z.number().positive().nullable().optional(),
   categoryId: z.string().uuid(),
   brandId: z.string().uuid(),
   unit: z.string().min(1),
@@ -52,8 +54,10 @@ export class CreateProductDto implements CreateProductInput {
   @ApiProperty() name!: string;
   @ApiPropertyOptional() description?: string;
   @ApiProperty() imageUrl!: string;
-  @ApiProperty() priceNaira!: number;
-  @ApiPropertyOptional() discountPriceNaira?: number;
+  @ApiPropertyOptional() priceNaira?: number;
+  @ApiPropertyOptional() costPriceNaira?: number;
+  @ApiPropertyOptional({ enum: ["manual", "percentage"] }) pricingMode?: "manual" | "percentage";
+  @ApiPropertyOptional() discountPriceNaira?: number | null;
   @ApiProperty() categoryId!: string;
   @ApiProperty() brandId!: string;
   @ApiProperty() unit!: string;
@@ -73,7 +77,9 @@ export class UpdateProductDto implements Partial<CreateProductInput> {
   @ApiPropertyOptional() description?: string;
   @ApiPropertyOptional() imageUrl?: string;
   @ApiPropertyOptional() priceNaira?: number;
-  @ApiPropertyOptional() discountPriceNaira?: number;
+  @ApiPropertyOptional() costPriceNaira?: number;
+  @ApiPropertyOptional({ enum: ["manual", "percentage"] }) pricingMode?: "manual" | "percentage";
+  @ApiPropertyOptional() discountPriceNaira?: number | null;
   @ApiPropertyOptional() categoryId?: string;
   @ApiPropertyOptional() brandId?: string;
   @ApiPropertyOptional() unit?: string;
@@ -115,3 +121,11 @@ export class CreateBannerDto implements CreateBannerInput {
   @ApiPropertyOptional() sortOrder?: number;
   @ApiPropertyOptional() isActive?: boolean;
 }
+
+const pricingPercent = z.number().min(0).max(1000).refine(
+  value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001,
+  "Use at most two decimal places",
+);
+export const catalogPricingSchema = z.object({ markupPercent: pricingPercent, insurancePercent: pricingPercent }).strict();
+export type CatalogPricingInput = z.infer<typeof catalogPricingSchema>;
+export const priceListImportSchema = z.object({ imageBaseUrl: z.string().url() }).strict();

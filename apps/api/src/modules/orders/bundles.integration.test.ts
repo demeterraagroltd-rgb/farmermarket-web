@@ -70,6 +70,14 @@ describe("Bundles through real order SQL and migrations", () => {
     expect(history.items[0].components.find((i) => i.productId === oil)?.unitPrice).toBe(500);
     await db.update(bundles).set({ name: "Kitchen" }).where(eq(bundles.id, bundle));
   });
+  it("requires review when the buyer-confirmed subtotal is stale and rolls back stock", async () => {
+    const before = (await db.select().from(orders)).length;
+    await expect(service.create(userId, { ...input([{ productId: oil, quantity: 1 }]), expectedSubtotalNaira: 499 })).rejects.toThrow("prices have changed");
+    expect(await stock(oil)).toBe(10);
+    expect((await db.select().from(orders)).length).toBe(before);
+    const placed = await service.create(userId, { ...input([{ productId: oil, quantity: 1 }]), expectedSubtotalNaira: 500 });
+    expect(placed.subtotal).toBe(500);
+  });
   it("rejects combined oversell and rolls back earlier deductions", async () => {
     const before = (await db.select().from(orders)).length;
     await expect(service.create(userId, input([{ bundleId: bundle, quantity: 5 }, { productId: oil, quantity: 1 }]))).rejects.toThrow("Not enough stock");
