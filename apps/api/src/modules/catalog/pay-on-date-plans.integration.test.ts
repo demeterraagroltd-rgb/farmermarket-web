@@ -13,6 +13,9 @@ describe("Customer payment options", () => {
     expect(plans.map(p => p.name)).toEqual([
       "Pay Now", "Pay in a month", "Pay in 2 monthly installments", "Pay in 3 monthly installments",
     ]);
+    expect(plans.map(p => p.interestPercent)).toEqual([0, 1, 2, 5]);
+    const oneMonth = buildInstallments(100000n, plans[1], new Date("2026-11-08T10:00:00Z"));
+    expect(oneMonth[0].amountKobo).toBe(101000n);
     const placedAt = new Date("2026-11-08T10:00:00Z");
     expect(isPayNow(plans[0])).toBe(true);
     for (const plan of plans.slice(1)) {

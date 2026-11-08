@@ -5,7 +5,7 @@ import { createDb, bnplPlans } from "@farmermarket/db";
 // four plans until §14 moves the phone app onto this table (§5.7).
 const PLANS = [
   { name: "Pay Now", durationMonths: 0, interestPercent: 0, isPopular: false, sortOrder: 0 },
-  { name: "Pay in a month", durationMonths: 1, interestPercent: 0, isPopular: true, sortOrder: 1 },
+  { name: "Pay in a month", durationMonths: 1, interestPercent: 1, isPopular: true, sortOrder: 1 },
   { name: "Pay in 2 monthly installments", durationMonths: 2, interestPercent: 2, isPopular: false, sortOrder: 2 },
   { name: "Pay in 3 monthly installments", durationMonths: 3, interestPercent: 5, isPopular: false, sortOrder: 3 },
 ];

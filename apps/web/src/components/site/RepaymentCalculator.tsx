@@ -110,7 +110,7 @@ export function RepaymentCalculator({ plans }: { plans: Plan[] }) {
 
 const FALLBACK_PLANS: Plan[] = [
   { id: "pay-now", name: "Pay Now", durationMonths: 0, interestPercent: 0, isPopular: false },
-  { id: "next-salary", name: "Pay in a month", durationMonths: 1, interestPercent: 0, isPopular: true },
+  { id: "next-salary", name: "Pay in a month", durationMonths: 1, interestPercent: 1, isPopular: true },
   { id: "two-months", name: "Pay in 2 monthly installments", durationMonths: 2, interestPercent: 2, isPopular: false },
-  { id: "three-months", name: "Pay in 3 monthly installments", durationMonths: 3, interestPercent: 4, isPopular: false },
+  { id: "three-months", name: "Pay in 3 monthly installments", durationMonths: 3, interestPercent: 5, isPopular: false },
 ];

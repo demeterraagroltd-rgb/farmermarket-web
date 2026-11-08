@@ -232,6 +232,13 @@
       "when": 1794130000000,
       "tag": "0032_customer_payment_options",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794130000001,
+      "tag": "0033_one_month_plan_fee",
+      "breakpoints": true
     }
   ]
 }

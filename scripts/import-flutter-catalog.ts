@@ -84,7 +84,7 @@ const PRODUCT_DATA: ProductSeed[] = [
 
 const BNPL_PLANS = [
   { name: "Pay Now", durationMonths: 0, interestPercent: 0, isPopular: false, sortOrder: 0 },
-  { name: "Pay in a month", durationMonths: 1, interestPercent: 0, isPopular: true, sortOrder: 1 },
+  { name: "Pay in a month", durationMonths: 1, interestPercent: 1, isPopular: true, sortOrder: 1 },
   { name: "Pay in 2 monthly installments", durationMonths: 2, interestPercent: 2, isPopular: false, sortOrder: 2 },
   { name: "Pay in 3 monthly installments", durationMonths: 3, interestPercent: 5, isPopular: false, sortOrder: 3 },
 ];
