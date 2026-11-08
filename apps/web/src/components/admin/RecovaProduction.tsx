@@ -5,6 +5,7 @@ import { RECOVA_STATUS_LABEL } from "../../lib/recova-status";
 import { apiFetch } from "../../lib/auth";
 import { Card } from "../ui/Card";
 import { RecovaReadiness, type RecovaReadinessReport } from "./RecovaReadiness";
+import { RecovaReconciliation } from "./RecovaReconciliation";
 
 type Status = { enabled: boolean; tokenConfigured: boolean; configurationReady: boolean; destination: string | null; institutionCode: string | null; issues: string[];
   readiness?: RecovaReadinessReport;
@@ -54,7 +55,7 @@ export function RecovaProduction() {
     finally { setBusy(false); }
   }
   const button = "rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40";
-  return <Card className="space-y-4 p-6">
+  return <><RecovaReconciliation /><Card className="space-y-4 p-6">
     <h2 className="text-xl font-bold">Recova readiness checks</h2>
     <p className="text-sm text-slate-600">Check what Farmer Market needs for customer authorization, SMS, collection, recovery and repayment reconciliation. Refresh after changing server settings.</p>
     <button className={button} disabled={busy} onClick={() => void check("status")}>{status ? "Refresh readiness checks" : "Check repayment readiness"}</button>
@@ -111,5 +112,5 @@ export function RecovaProduction() {
     {busy && <p role="status" className="text-sm text-slate-500">Checking…</p>}
     {result !== null && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 p-4 text-xs text-slate-100">{JSON.stringify(result, null, 2)}</pre>}
     </div>
-  </Card>;
+  </Card></>;
 }

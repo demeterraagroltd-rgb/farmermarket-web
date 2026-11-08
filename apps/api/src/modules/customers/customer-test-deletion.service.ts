@@ -19,10 +19,13 @@ export class CustomerTestDeletionService {
     const mandates = await tx.select({ id: s.debitMandates.id }).from(s.debitMandates).where(eq(s.debitMandates.userId, id));
     const attempts = await tx.select({ id: s.debitAttempts.id }).from(s.debitAttempts).where(eq(s.debitAttempts.userId, id));
     const recova = await tx.select().from(s.recovaConsents).where(eq(s.recovaConsents.userId, id));
+    const paymentReports = recova.length ? await tx.select({ id: s.recovaPaymentReports.id }).from(s.recovaPaymentReports)
+      .where(inArray(s.recovaPaymentReports.reference, recova.map(row => row.reference))) : [];
     const repayments = schedules.length ? await tx.select({ id: s.repayments.id }).from(s.repayments).where(inArray(s.repayments.repaymentScheduleId, schedules.map(row => row.id))) : [];
     const applications = await tx.select({ id: s.applications.id }).from(s.applications).where(eq(s.applications.userId, id));
     const blockers: string[] = [];
     if (!user.deactivatedAt) blockers.push("Suspend the account before permanently deleting test data.");
+    if (paymentReports.length) blockers.push("Payment reconciliation reports exist. Resolve them through a reviewed finance process before test reset.");
     if (mandates.length || attempts.length) blockers.push("A Mono mandate or debit attempt exists. Resolve provider records through a separate reviewed process.");
     if (recova.some(row => row.status !== "draft" || row.submittedAt !== null)) blockers.push("A Recova request has left draft status. Resolve the provider request before account removal.");
     if (repayments.length || schedules.some(row => row.amountPaidKobo !== 0n || row.isPaid)) blockers.push("Recorded payments exist. Financial history cannot be removed by test reset.");

@@ -74,4 +74,13 @@ describe("Permanent test account deletion with isolated SQL", () => {
     expect(await db.select().from(s.ledgerEntries).where(eq(s.ledgerEntries.transactionId, transactionId))).toHaveLength(2);
     expect(await db.select().from(s.users).where(eq(s.users.id, target.user.id))).toHaveLength(1);
   });
+  it("preserves accounts with payment reconciliation evidence, even when the mandate is only a draft", async () => {
+    const { user, order } = await customer();
+    const reference = `fm-live-${order.id}`;
+    await db.insert(s.recovaConsents).values({ userId: user.id, orderId: order.id, reference, purpose: "Collection", bankCode: "999", accountLast4: "0000", payloadEncrypted: "test", scheduleSnapshot: [], consentVersion: "test" });
+    await db.insert(s.recovaPaymentReports).values({ reference, channel: "voluntary", sourceName: "test bank", transactionReference: "manual-test-ref", amountKobo: 100n, observedAt: new Date(), reportedByStaffId: staffId });
+    expect((await service.preview(user.id)).allowed).toBe(false);
+    await expect(service.remove(user.id, staffId, confirmation(user.id))).rejects.toThrow("reconciliation reports");
+    expect(await db.select().from(s.users).where(eq(s.users.id, user.id))).toHaveLength(1);
+  });
 });
