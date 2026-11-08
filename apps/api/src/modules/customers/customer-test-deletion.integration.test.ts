@@ -26,7 +26,7 @@ describe("Permanent test account deletion with isolated SQL", () => {
     const [schedule] = await db.insert(s.repaymentSchedules).values({ userId: user.id, orderId: order.id, amountKobo: 110n, dueDate: new Date(Date.now() + 86400000), installmentNumber: 1, totalInstallments: 1 }).returning();
     return { user, order, schedule };
   }
-  const confirmation = (id: string) => ({ confirmation: `DELETE ${id}`, testDataConfirmed: true, reason: "Remove confirmed test data" });
+  const confirmation = (_id: string) => ({ confirmation: "DELETE", testDataConfirmed: true, reason: "Remove confirmed test data" });
   it("requires explicit confirmation and refuses active accounts", async () => {
     const { user } = await customer(true);
     expect((await service.preview(user.id)).allowed).toBe(false);

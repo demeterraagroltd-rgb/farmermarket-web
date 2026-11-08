@@ -41,13 +41,13 @@ export class CustomerTestDeletionService {
       orders: data.orders.length, repaymentSchedules: data.schedules.length, applications: data.applications.length,
       recovaDrafts: data.recova.length,
       outstandingKobo: data.schedules.reduce((sum, row) => sum + row.amountKobo - row.amountPaidKobo, 0n).toString(),
-      confirmation: `DELETE ${data.user.id}`,
+      confirmation: "DELETE",
       retained: "Security audit and inventory movement history remain. This removes the application account and linked test records; it does not erase provider records or externally stored document files.",
     };
   }
 
   async remove(id: string, staffId: string, input: { confirmation: string; testDataConfirmed: boolean; reason: string }) {
-    if (input.confirmation !== `DELETE ${id}` || input.testDataConfirmed !== true || !input.reason.trim()) {
+    if (input.confirmation !== "DELETE" || input.testDataConfirmed !== true || !input.reason.trim()) {
       throw new BadRequestException("Confirm the exact customer, test-only data and deletion reason.");
     }
     return this.db.transaction(async tx => {
