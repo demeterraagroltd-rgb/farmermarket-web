@@ -3,22 +3,25 @@ import { createTestDb, type TestDb } from "../../test/test-db";
 import { CatalogService } from "./catalog.service";
 import { buildInstallments, isPayNow } from "../orders/installments";
 
-describe("Pay-on-date plans", () => {
+describe("Customer payment options", () => {
   let t: TestDb;
   beforeAll(async () => { t = await createTestDb(); }, 20000);
   afterAll(async () => t?.close());
 
-  it("offers Pay tomorrow and Pay in 7 days to every customer as single dated payments", async () => {
+  it("offers exactly four options with monthly schedules", async () => {
     const plans = await new CatalogService(t.db).listActiveBnplPlans();
-    const placedAt = new Date("2026-10-28T10:00:00+01:00");
-    for (const [name, days] of [["Pay tomorrow", 1], ["Pay in 7 days", 7]] as const) {
-      const plan = plans.find((p) => p.name === name);
-      expect(plan).toMatchObject({ durationDays: days, interestPercent: 0, testOnly: false });
-      // Not Pay Now: these are dated, so Recova can collect them.
-      expect(isPayNow(plan!)).toBe(false);
-      const [only, ...rest] = buildInstallments(100000n, plan!, placedAt);
-      expect(rest).toHaveLength(0);
-      expect(only).toMatchObject({ amountKobo: 100000n, dueDate: new Date(placedAt.getTime() + days * 86_400_000) });
+    expect(plans.map(p => p.name)).toEqual([
+      "Pay Now", "Pay in a month", "Pay in 2 monthly installments", "Pay in 3 monthly installments",
+    ]);
+    const placedAt = new Date("2026-11-08T10:00:00Z");
+    expect(isPayNow(plans[0])).toBe(true);
+    for (const plan of plans.slice(1)) {
+      const schedule = buildInstallments(100000n, plan, placedAt);
+      expect(isPayNow(plan)).toBe(false);
+      expect(schedule).toHaveLength(plan.durationMonths);
+      schedule.forEach((payment, i) => {
+        expect(payment.dueDate).toEqual(new Date(placedAt.getTime() + (i + 1) * 30 * 86400000));
+      });
     }
   });
 });

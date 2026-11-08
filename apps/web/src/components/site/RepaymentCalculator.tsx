@@ -15,7 +15,7 @@ const PRESETS = [10000, 25000, 50000, 100000];
 
 // Client island on the (server-rendered) marketing page. Same fee maths as
 // checkout: total = amount + amount·interest%, split evenly across the plan's
-// months (Pay Now / Pay Next Salary = one payment).
+// months (Pay Now / Pay in a month = one payment).
 export function RepaymentCalculator({ plans }: { plans: Plan[] }) {
   const usable = plans.length ? plans : FALLBACK_PLANS;
   const [amount, setAmount] = useState(25000);
@@ -110,7 +110,7 @@ export function RepaymentCalculator({ plans }: { plans: Plan[] }) {
 
 const FALLBACK_PLANS: Plan[] = [
   { id: "pay-now", name: "Pay Now", durationMonths: 0, interestPercent: 0, isPopular: false },
-  { id: "next-salary", name: "Pay Next Salary", durationMonths: 1, interestPercent: 0, isPopular: true },
-  { id: "two-months", name: "Pay Over 2 Months", durationMonths: 2, interestPercent: 2, isPopular: false },
-  { id: "three-months", name: "Pay Over 3 Months", durationMonths: 3, interestPercent: 4, isPopular: false },
+  { id: "next-salary", name: "Pay in a month", durationMonths: 1, interestPercent: 0, isPopular: true },
+  { id: "two-months", name: "Pay in 2 monthly installments", durationMonths: 2, interestPercent: 2, isPopular: false },
+  { id: "three-months", name: "Pay in 3 monthly installments", durationMonths: 3, interestPercent: 4, isPopular: false },
 ];

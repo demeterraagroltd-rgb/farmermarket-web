@@ -225,6 +225,13 @@
       "when": 1794129117909,
       "tag": "0031_sloppy_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794130000000,
+      "tag": "0032_customer_payment_options",
+      "breakpoints": true
     }
   ]
 }

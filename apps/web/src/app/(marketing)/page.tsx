@@ -56,7 +56,7 @@ const FAQS = [
   {
     question: "Is there interest?",
     answer:
-      "Pay Now and Pay Next Salary are 0% fee. The 2-month and 3-month plans carry a small, fixed fee — shown upfront on every plan before you choose, never added afterward.",
+      "Pay Now and Pay in a month are 0% fee. The 2-month and 3-month plans carry a small, fixed fee — shown upfront on every plan before you choose, never added afterward.",
   },
   {
     question: "What happens after I apply?",

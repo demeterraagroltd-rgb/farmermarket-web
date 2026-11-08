@@ -261,7 +261,7 @@ export default function CheckoutPage() {
 
           <div className="mt-6">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
-              Repayment plan
+              Payment plan
             </p>
             {plans === null ? (
               <p className="text-sm text-text-muted">Loading plans…</p>
@@ -292,8 +292,8 @@ export default function CheckoutPage() {
                           {plan.durationDays
                             ? `Pay in full in ${plan.durationDays} day${plan.durationDays === 1 ? "" : "s"}`
                             : m.installments === 1
-                            ? "Pay in full"
-                            : `${m.installments} installments of ${formatNairaAmount(m.installmentAmount)}`}
+                            ? (plan.durationMonths === 1 ? "Pay in full in one month" : "Pay in full today")
+                            : `${m.installments} monthly installments of ${formatNairaAmount(m.installmentAmount)}`}
                           {plan.interestPercent > 0 ? ` · ${plan.interestPercent}% fee` : " · no fee"}
                         </p>
                       </div>
